@@ -1,0 +1,756 @@
+<!doctype html>
+<html lang="th" class="h-full">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CARC Maze Explorer</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.263.0/dist/umd/lucide.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&amp;family=Sarabun:wght@400;600;700&amp;display=swap" rel="stylesheet">
+  <script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: {
+        mono: ['JetBrains Mono', 'monospace'],
+        sans: ['Sarabun', 'sans-serif']
+      }
+    }
+  }
+}
+</script>
+  <style>
+html, body { height: 100%; margin: 0; overflow: hidden; }
+.maze-cell { position: relative; }
+.code-block { counter-reset: line; }
+.code-block .line::before { counter-increment: line; content: counter(line); display: inline-block; width: 2.5em; text-align: right; margin-right: 1em; color: #636e7b; user-select: none; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+</style>
+  <style>body { box-sizing: border-box; }</style>
+  
+    <!-- Inline lightweight SDK stubs to avoid 404s in local/dev environment -->
+    <script>
+      window.elementSdk = window.elementSdk || {
+        _config: {},
+        _onConfigChange: null,
+        init(opts) {
+          this._config = Object.assign({}, opts.defaultConfig || {});
+          this._onConfigChange = opts.onConfigChange || null;
+          // expose setConfig used by the page
+          this.setConfig = (c) => { Object.assign(this._config, c); if (this._onConfigChange) this._onConfigChange(this._config); };
+          return this;
+        }
+      };
+      window.dataSdk = window.dataSdk || {};
+      window.telemetrySdk = window.telemetrySdk || {};
+    </script>
+  </head>
+ <body class="h-full bg-gray-950 text-gray-100 font-sans">
+  <div id="app" class="h-full flex flex-col overflow-hidden">
+   <!-- Header -->
+   <header class="flex-shrink-0 bg-gray-900 border-b border-gray-800 px-3 py-2 flex items-center justify-between">
+    <h1 id="appTitle" class="text-lg font-bold text-emerald-400 flex items-center gap-2">
+     <svg width="24" height="24" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 3v18" />
+     </svg> CARC Maze Explorer</h1>
+    <div class="flex items-center gap-2 text-xs text-gray-400">
+     <span>7×7 Maze</span> <span class="w-1 h-1 bg-gray-600 rounded-full"></span> <span>Target: 48 cells</span>
+    </div>
+   </header><!-- Main Content -->
+   <div class="flex-1 flex flex-col lg:flex-row overflow-hidden min-h-0">
+    <!-- Left Panel: Maze + Controls -->
+    <div class="flex-shrink-0 flex flex-col p-3 gap-3 overflow-y-auto lg:w-[420px]">
+     <!-- Controls Row -->
+     <div class="flex flex-wrap items-center gap-2">
+      <select id="algoSelect" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm focus:outline-none focus:border-emerald-500"> <option value="dfs">DFS</option> <option value="wall_follower">Wall Follower</option> <option value="left_hand">Left-hand Rule</option> <option value="right_hand">Right-hand Rule</option> <option value="random_walk">Random Walk</option> <option value="astar">A*</option> </select> <button id="btnStart" class="bg-emerald-600 hover:bg-emerald-700 px-3 py-1 rounded text-sm font-semibold transition">Start</button> <button id="btnReset" class="bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-sm transition">Reset</button> <button id="btnRandomize" class="bg-indigo-600 hover:bg-indigo-700 px-3 py-1 rounded text-sm transition">Randomize</button>
+      <div class="flex items-center gap-1 ml-auto">
+       <label class="text-xs text-gray-400">Speed:</label> <input id="speedSlider" type="range" min="50" max="1000" value="300" step="50" class="w-20 accent-emerald-500"> <span id="speedVal" class="text-xs text-gray-400 w-10">300ms</span>
+      </div>
+     </div><!-- Stats Row -->
+     <div class="grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
+      <div class="bg-gray-800 rounded p-1.5">
+       <div class="text-[10px] text-gray-500 uppercase">
+        Time
+       </div>
+       <div id="statTime" class="text-sm font-mono text-yellow-400">
+        0.0s
+       </div>
+      </div>
+      <div class="bg-gray-800 rounded p-1.5">
+       <div class="text-[10px] text-gray-500 uppercase">
+        Visited
+       </div>
+       <div id="statVisited" class="text-sm font-mono text-cyan-400">
+        0
+       </div>
+      </div>
+      <div class="bg-gray-800 rounded p-1.5">
+       <div class="text-[10px] text-gray-500 uppercase">
+        Score
+       </div>
+       <div id="statScore" class="text-sm font-mono text-emerald-400">
+        0
+       </div>
+      </div>
+      <div class="bg-gray-800 rounded p-1.5">
+       <div class="text-[10px] text-gray-500 uppercase">
+        Restarts
+       </div>
+       <div id="statRestarts" class="text-sm font-mono text-red-400">
+        0
+       </div>
+      </div>
+      <div class="bg-gray-800 rounded p-1.5">
+       <div class="text-[10px] text-gray-500 uppercase">
+        Reachable
+       </div>
+       <div id="statReachable" class="text-sm font-mono text-purple-400">
+        48
+       </div>
+      </div>
+      <div class="bg-gray-800 rounded p-1.5">
+       <div class="text-[10px] text-gray-500 uppercase">
+        Sensors
+       </div>
+       <div id="statSensors" class="text-xs font-mono text-orange-400">
+        F:0 L:0 R:0
+       </div>
+        <div class="text-[10px] text-gray-500 mt-1">Sensors = distance in free cells to next wall (0 = wall adjacent)</div>
+      </div>
+     </div><!-- Maze Grid -->
+    
+    
+     <div class="flex justify-center">
+      <div id="mazeContainer" class="relative bg-gray-900 border-2 border-emerald-700 rounded"></div>
+     </div>
+    </div><!-- Right Panel: Code Viewer -->
+    <!-- Right Sidebar: Leaderboard + Map Summary (visible on large screens) -->
+    <div class="hidden lg:flex flex-col w-72 p-3 border-l border-gray-800 bg-gray-900 text-xs gap-3">
+     <div>
+      <div class="flex items-center justify-between mb-1">
+       <div class="text-sm font-semibold text-emerald-300">Leaderboard</div>
+       <div class="flex items-center gap-1">
+        <button id="btnDumpRuns" class="bg-gray-700 hover:bg-gray-600 px-2 py-0.5 rounded text-xs">Dump</button>
+        <button id="btnClearHistory" class="bg-gray-700 hover:bg-gray-600 px-2 py-0.5 rounded text-xs">Clear</button>
+       </div>
+      </div>
+      <div class="overflow-auto max-h-40">
+      <table class="w-full text-left text-[12px]">
+          <thead class="text-gray-400 text-[11px]"><tr><th class="w-6">#</th><th>Algo</th><th class="text-right">Best (cells)</th><th class="text-right">Time</th><th class="text-right">#</th></tr></thead>
+          <tbody id="leaderboardTable"></tbody>
+       </table>
+      </div>
+     </div>
+     <div>
+      <div class="text-sm font-semibold text-emerald-300 mb-1">Map Summary</div>
+      <div id="mapSummaryInfo" class="text-[12px] text-gray-200 mb-2">Map runs for this layout</div>
+      <div class="overflow-auto max-h-40">
+        <table class="w-full text-left text-[12px]">
+          <thead class="text-gray-400 text-[11px]"><tr><th class="w-6">#</th><th>Algo</th><th class="text-right">Best (cells)</th><th class="text-right">Time</th><th class="text-right">#</th></tr></thead>
+        <tbody id="mapSummaryTable"></tbody>
+       </table>
+      </div>
+      <div class="mt-2 text-[11px] text-gray-400">Showing results for current map fingerprint.</div>
+     </div>
+    </div>
+    <div class="flex-1 flex flex-col min-h-0 border-t lg:border-t-0 lg:border-l border-gray-800">
+     <!-- Code Tabs -->
+     <div class="flex-shrink-0 flex items-center bg-gray-900 border-b border-gray-800 px-3 py-1 gap-1">
+      <button class="code-tab active bg-emerald-600 text-white px-2 py-0.5 rounded text-xs font-semibold" data-tab="thai">คำอธิบาย</button> <button class="code-tab bg-gray-700 text-gray-300 px-2 py-0.5 rounded text-xs" data-tab="python">Python</button> <button class="code-tab bg-gray-700 text-gray-300 px-2 py-0.5 rounded text-xs" data-tab="spike">SPIKE v3</button> <button id="btnCopy" class="ml-auto bg-gray-700 hover:bg-gray-600 px-2 py-0.5 rounded text-xs flex items-center gap-1 transition"> <i data-lucide="copy" style="width:12px;height:12px"></i> Copy </button>
+     </div><!-- Code Content -->
+     <div id="codeContent" class="flex-1 overflow-auto p-3 font-mono text-xs leading-relaxed bg-gray-950"></div>
+    </div>
+   </div>
+  </div>
+  <script>
+// ========== MAZE ENGINE ==========
+const ROWS = 7, COLS = 7, TARGET_REACHABLE = 48;
+const CELL_SIZE = 44, WALL_W = 4;
+
+// Directions: 0=N,1=E,2=S,3=W
+const DR = [-1, 0, 1, 0], DC = [0, 1, 0, -1];
+
+let hWalls, vWalls; // hWalls[r][c] = top wall of (r,c); vWalls[r][c] = left wall of (r,c)
+let robot = { r: 6, c: 0, dir: 0 }; // dir: 0=N,1=E,2=S,3=W
+let visited = new Set();
+let running = false, intervalId = null, startTime = 0, elapsed = 0, restarts = 0;
+let currentTab = 'thai';
+let wheelRotation = 0; // degrees, used to animate wheel spin
+let prevRobot = { r: robot.r, c: robot.c, dir: robot.dir };
+
+function initWalls() {
+  hWalls = Array.from({length: ROWS+1}, () => Array(COLS).fill(true));
+  vWalls = Array.from({length: ROWS}, () => Array(COLS+1).fill(true));
+}
+
+function generateMaze() {
+  initWalls();
+  // Randomized DFS to carve passages
+  const visitedGen = Array.from({length: ROWS}, () => Array(COLS).fill(false));
+  const stack = [[6, 0]];
+  visitedGen[6][0] = true;
+  while (stack.length > 0) {
+    const [r, c] = stack[stack.length - 1];
+    const neighbors = [];
+    for (let d = 0; d < 4; d++) {
+      const nr = r + DR[d], nc = c + DC[d];
+      if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && !visitedGen[nr][nc]) neighbors.push(d);
+    }
+    if (neighbors.length === 0) { stack.pop(); continue; }
+    const d = neighbors[Math.floor(Math.random() * neighbors.length)];
+    const nr = r + DR[d], nc = c + DC[d];
+    removeWall(r, c, d);
+    visitedGen[nr][nc] = true;
+    stack.push([nr, nc]);
+  }
+  // Add extra openings to reach TARGET_REACHABLE
+  adjustReachable();
+}
+
+function removeWall(r, c, d) {
+  if (d === 0) hWalls[r][c] = false;
+  else if (d === 2) hWalls[r+1][c] = false;
+  else if (d === 3) vWalls[r][c] = false;
+  else if (d === 1) vWalls[r][c+1] = false;
+}
+
+function hasWall(r, c, d) {
+  if (d === 0) return hWalls[r][c];
+  if (d === 2) return hWalls[r+1][c];
+  if (d === 3) return vWalls[r][c];
+  if (d === 1) return vWalls[r][c+1];
+}
+
+function countReachable() {
+  const vis = new Set();
+  const q = [[6, 0]];
+  vis.add('6,0');
+  while (q.length) {
+    const [r, c] = q.shift();
+    for (let d = 0; d < 4; d++) {
+      if (!hasWall(r, c, d)) {
+        const nr = r+DR[d], nc = c+DC[d];
+        const k = nr+','+nc;
+        if (nr>=0&&nr<ROWS&&nc>=0&&nc<COLS&&!vis.has(k)) { vis.add(k); q.push([nr,nc]); }
+      }
+    }
+  }
+  return vis.size;
+}
+
+function adjustReachable() {
+  let attempts = 0;
+  while (countReachable() < TARGET_REACHABLE && attempts < 200) {
+    const r = Math.floor(Math.random()*ROWS), c = Math.floor(Math.random()*COLS);
+    const d = Math.floor(Math.random()*4);
+    const nr = r+DR[d], nc = c+DC[d];
+    if (nr>=0&&nr<ROWS&&nc>=0&&nc<COLS) removeWall(r,c,d);
+    attempts++;
+  }
+}
+
+// ========== SENSORS ==========
+function senseDir(r, c, d) {
+  let dist = 0;
+  let cr = r, cc = c;
+  while (!hasWall(cr, cc, d)) {
+    cr += DR[d]; cc += DC[d];
+    dist++;
+    if (cr<0||cr>=ROWS||cc<0||cc>=COLS) break;
+  }
+  return dist;
+}
+
+function getSensors() {
+  const f = senseDir(robot.r, robot.c, robot.dir);
+  const l = senseDir(robot.r, robot.c, (robot.dir+3)%4);
+  const ri = senseDir(robot.r, robot.c, (robot.dir+1)%4);
+  return {front:f, left:l, right:ri};
+}
+
+// ========== ALGORITHMS ==========
+let dfsStack = [], dfsVisited = new Set(), astarPath = [], astarIdx = 0;
+
+function resetAlgo() {
+  dfsStack = [[robot.r, robot.c]];
+  dfsVisited = new Set(['6,0']);
+  astarPath = []; astarIdx = 0;
+}
+
+function stepDFS() {
+  if (dfsStack.length === 0) return false;
+  const [r, c] = dfsStack[dfsStack.length-1];
+  let moved = false;
+  for (let d = 0; d < 4; d++) {
+    if (!hasWall(r, c, d)) {
+      const nr = r+DR[d], nc = c+DC[d];
+      const k = nr+','+nc;
+      if (!dfsVisited.has(k)) {
+        dfsVisited.add(k);
+        dfsStack.push([nr, nc]);
+        robot.r = nr; robot.c = nc; robot.dir = d;
+        moved = true; break;
+      }
+    }
+  }
+  if (!moved) { dfsStack.pop(); if (dfsStack.length) { const [pr,pc]=dfsStack[dfsStack.length-1]; robot.r=pr; robot.c=pc; } }
+  return true;
+}
+
+function stepWallFollower(hand) { // hand: 'left' or 'right'
+  const offset = hand === 'left' ? 3 : 1;
+  const checkOrder = hand === 'left' ? [3,0,1,2] : [1,0,3,2];
+  for (const rel of checkOrder) {
+    const absDir = (robot.dir + rel) % 4;
+    if (!hasWall(robot.r, robot.c, absDir)) {
+      robot.dir = absDir;
+      robot.r += DR[absDir]; robot.c += DC[absDir];
+      return true;
+    }
+  }
+  robot.dir = (robot.dir + 2) % 4;
+  return true;
+}
+
+function stepRandomWalk() {
+  const open = [];
+  for (let d=0;d<4;d++) if (!hasWall(robot.r,robot.c,d)) open.push(d);
+  if (open.length===0) return false;
+  const d = open[Math.floor(Math.random()*open.length)];
+  robot.dir = d; robot.r += DR[d]; robot.c += DC[d];
+  return true;
+}
+
+function computeAStar() {
+  // BFS shortest path from (6,0) visiting all reachable
+  // Simplified: just find path to farthest unvisited
+  const target = findFarthestUnvisited();
+  if (!target) return [];
+  return bfsPath(robot.r, robot.c, target[0], target[1]);
+}
+
+function findFarthestUnvisited() {
+  // Find any unvisited reachable cell
+  const vis = new Set();
+  const q = [[robot.r, robot.c, []]];
+  vis.add(robot.r+','+robot.c);
+  let last = null;
+  while (q.length) {
+    const [r,c,path] = q.shift();
+    if (!visited.has(r+','+c)) last = [r,c];
+    for (let d=0;d<4;d++) {
+      if (!hasWall(r,c,d)) {
+        const nr=r+DR[d],nc=c+DC[d],k=nr+','+nc;
+        if (!vis.has(k)&&nr>=0&&nr<ROWS&&nc>=0&&nc<COLS) { vis.add(k); q.push([nr,nc]); }
+      }
+    }
+  }
+  return last;
+}
+
+function bfsPath(sr,sc,tr,tc) {
+  const vis = new Set(); vis.add(sr+','+sc);
+  const q = [[sr,sc,[]]];
+  while (q.length) {
+    const [r,c,path] = q.shift();
+    if (r===tr&&c===tc) return path;
+    for (let d=0;d<4;d++) {
+      if (!hasWall(r,c,d)) {
+        const nr=r+DR[d],nc=c+DC[d],k=nr+','+nc;
+        if (!vis.has(k)&&nr>=0&&nr<ROWS&&nc>=0&&nc<COLS) { vis.add(k); q.push([nr,nc,[...path,[nr,nc,d]]]); }
+      }
+    }
+  }
+  return [];
+}
+
+function stepAStar() {
+  if (astarIdx >= astarPath.length) {
+    astarPath = computeAStar();
+    astarIdx = 0;
+    if (astarPath.length === 0) return false;
+  }
+  const [nr,nc,d] = astarPath[astarIdx++];
+  robot.r = nr; robot.c = nc; robot.dir = d;
+  return true;
+}
+
+function stepOnce() {
+  const algo = document.getElementById('algoSelect').value;
+  let ok = true;
+  const prevR = robot.r, prevC = robot.c, prevD = robot.dir;
+  switch(algo) {
+    case 'dfs': ok = stepDFS(); break;
+    case 'wall_follower': ok = stepWallFollower('left'); break;
+    case 'left_hand': ok = stepWallFollower('left'); break;
+    case 'right_hand': ok = stepWallFollower('right'); break;
+    case 'random_walk': ok = stepRandomWalk(); break;
+    case 'astar': ok = stepAStar(); break;
+  }
+  // animate wheels when robot moves forward one cell
+  if (robot.r !== prevR || robot.c !== prevC) {
+    // one cell movement -> spin wheels by 360deg
+    wheelRotation = (wheelRotation + 360) % 36000;
+  } else if (robot.dir !== prevD) {
+    // turning in place - small wheel spin to suggest turn
+    wheelRotation = (wheelRotation + (robot.dir - prevD) * 30) % 36000;
+  }
+  prevRobot.r = robot.r; prevRobot.c = robot.c; prevRobot.dir = robot.dir;
+  visited.add(robot.r+','+robot.c);
+  updateStats();
+  renderMaze();
+  const finished = (!ok || visited.size >= countReachable());
+  if (finished) {
+    const elapsedNow = (Date.now() - startTime)/1000;
+    const score = Math.max(0, Math.round(visited.size * 100 / TARGET_REACHABLE) - restarts * 3);
+    try {
+      addRunRecord({ map: getMapKey(), algo, elapsed: elapsedNow, score, visited: visited.size, restarts, t: Date.now() });
+    } catch (e) { console.warn('save run failed', e); }
+    stop();
+  }
+}
+
+// ========== UI ==========
+function renderMaze() {
+  const container = document.getElementById('mazeContainer');
+  const totalW = COLS * CELL_SIZE + WALL_W;
+  const totalH = ROWS * CELL_SIZE + WALL_W;
+  container.style.width = totalW + 'px';
+  container.style.height = totalH + 'px';
+
+  let html = '';
+  // Draw cells
+  for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++) {
+    const x = c*CELL_SIZE + WALL_W/2, y = r*CELL_SIZE + WALL_W/2;
+    const isVisited = visited.has(r+','+c);
+    const isStart = r===6&&c===0;
+    const bg = isVisited ? 'rgba(16,185,129,0.15)' : 'transparent';
+    html += `<div style="position:absolute;left:${x}px;top:${y}px;width:${CELL_SIZE}px;height:${CELL_SIZE}px;background:${bg}"></div>`;
+    if (isStart && !isVisited) html += `<div style="position:absolute;left:${x}px;top:${y}px;width:${CELL_SIZE}px;height:${CELL_SIZE}px;display:flex;align-items:center;justify-content:center"><span style="font-size:10px;color:#6ee7b7">START</span></div>`;
+  }
+
+  // Draw horizontal walls
+  for (let r=0;r<=ROWS;r++) for (let c=0;c<COLS;c++) {
+    if (hWalls[r][c]) {
+      const x = c*CELL_SIZE, y = r*CELL_SIZE;
+      html += `<div style="position:absolute;left:${x}px;top:${y}px;width:${CELL_SIZE+WALL_W}px;height:${WALL_W}px;background:#10b981;border-radius:1px"></div>`;
+    }
+  }
+  // Draw vertical walls
+  for (let r=0;r<ROWS;r++) for (let c=0;c<=COLS;c++) {
+    if (vWalls[r][c]) {
+      const x = c*CELL_SIZE, y = r*CELL_SIZE;
+      html += `<div style="position:absolute;left:${x}px;top:${y}px;width:${WALL_W}px;height:${CELL_SIZE+WALL_W}px;background:#10b981;border-radius:1px"></div>`;
+    }
+  }
+
+  container.innerHTML = html;
+
+  // Robot overlay: create persistent element so transforms animate smoothly
+  const rx = robot.c*CELL_SIZE + WALL_W/2 + CELL_SIZE/2;
+  const ry = robot.r*CELL_SIZE + WALL_W/2 + CELL_SIZE/2;
+  const headingDeg = robot.dir * 90;
+  let robotDiv = container.querySelector('#robotOverlay');
+  const svgHtml = `
+    <svg viewBox="0 0 48 48" width="48" height="48">
+      <path d="M 24 4 L 36 14 L 36 28 L 12 28 L 12 14 Z" fill="#4ade80" stroke="#15803d" stroke-width="2" stroke-linejoin="round"/>
+      <rect x="16" y="10" width="16" height="8" rx="2" fill="#22c55e" stroke="#15803d" stroke-width="1" opacity="0.95"/>
+      <polygon points="18,10 30,10 28,16 20,16" fill="#7dd3fc" opacity="0.6" stroke="#0284c7" stroke-width="0.5"/>
+      <!-- front sensors (pink) -->
+      <circle cx="18" cy="6" r="3" fill="#fca5a5"/>
+      <circle cx="24" cy="5" r="3" fill="#fca5a5"/>
+      <circle cx="30" cy="6" r="3" fill="#fca5a5"/>
+      <!-- left wheel group -->
+      <g class="wheel-l" style="transform-origin:11px 30px; transition:transform 0.18s linear;">
+        <circle cx="11" cy="30" r="7" fill="#0b2545"/>
+        <rect x="9" y="26" width="4" height="8" fill="#0ea5a4" opacity="0.3"/>
+      </g>
+      <!-- right wheel group -->
+      <g class="wheel-r" style="transform-origin:37px 30px; transition:transform 0.18s linear;">
+        <circle cx="37" cy="30" r="7" fill="#0b2545"/>
+        <rect x="35" y="26" width="4" height="8" fill="#0ea5a4" opacity="0.3"/>
+      </g>
+      <!-- left side sensor -->
+      <circle cx="10" cy="18" r="2.5" fill="#3b82f6"/>
+      <!-- right side sensor -->
+      <circle cx="38" cy="18" r="2.5" fill="#8b5cf6"/>
+      <path d="M 24 12 L 22 16 L 24 15 L 26 16 Z" fill="#ff6600" stroke="#cc3300" stroke-width="1" stroke-linejoin="round"/>
+    </svg>`;
+  if (!robotDiv) {
+    robotDiv = document.createElement('div');
+    robotDiv.id = 'robotOverlay';
+    robotDiv.style.position = 'absolute';
+    robotDiv.style.width = '48px';
+    robotDiv.style.height = '48px';
+    robotDiv.style.pointerEvents = 'none';
+    robotDiv.style.transition = 'transform 0.18s linear';
+    robotDiv.innerHTML = svgHtml;
+    container.appendChild(robotDiv);
+  }
+  robotDiv.style.left = (rx-24) + 'px';
+  robotDiv.style.top = (ry-24) + 'px';
+  robotDiv.style.transform = `rotate(${headingDeg}deg)`;
+  // apply wheel rotation
+  const wl = robotDiv.querySelector('.wheel-l');
+  const wrg = robotDiv.querySelector('.wheel-r');
+  if (wl) wl.style.transform = `rotate(${wheelRotation}deg)`;
+  if (wrg) wrg.style.transform = `rotate(${wheelRotation}deg)`;
+}
+
+function updateStats() {
+  const sensors = getSensors();
+  elapsed = running ? (Date.now() - startTime)/1000 : elapsed;
+  const score = Math.max(0, Math.round(visited.size * 100 / TARGET_REACHABLE) - restarts * 3);
+  document.getElementById('statTime').textContent = elapsed.toFixed(1) + 's';
+  document.getElementById('statVisited').textContent = visited.size;
+  document.getElementById('statScore').textContent = score;
+  document.getElementById('statRestarts').textContent = restarts;
+  document.getElementById('statReachable').textContent = countReachable();
+  document.getElementById('statSensors').textContent = `F:${sensors.front} L:${sensors.left} R:${sensors.right}`;
+}
+
+// ========== LOCAL STORAGE / LEADERBOARD ==========
+function getMapKey() {
+  // Compact map fingerprint by serializing walls
+  const h = hWalls.flat().map(x => x ? '1':'0').join('');
+  const v = vWalls.flat().map(x => x ? '1':'0').join('');
+  return `${h}|${v}`;
+}
+
+function loadRuns() {
+  try { return JSON.parse(localStorage.getItem('maze_runs')||'[]'); } catch(e){ return []; }
+}
+
+function saveRuns(arr) {
+  localStorage.setItem('maze_runs', JSON.stringify(arr.slice(-200)));
+}
+
+function addRunRecord(rec) {
+  const runs = loadRuns();
+  runs.push(rec);
+  saveRuns(runs);
+  renderLeaderboard();
+  renderMapSummary();
+}
+
+function renderLeaderboard() {
+  const runs = loadRuns();
+  const tableEl = document.getElementById('leaderboardTable');
+  const recentEl = document.getElementById('recentRuns');
+  const bestEl = document.getElementById('bestResult');
+  if (runs.length === 0) {
+    if (tableEl) tableEl.innerHTML = '';
+    if (bestEl) bestEl.textContent = 'No runs yet';
+    if (recentEl) recentEl.innerHTML = '';
+    return;
+  }
+  // Aggregate by algo — ranking priority: most visited cells, then shortest time (<=5min), then fewer restarts
+  const byAlgo = {};
+  runs.forEach(r=>{ if (!byAlgo[r.algo]) byAlgo[r.algo]=[]; byAlgo[r.algo].push(r); });
+  const rows = Object.keys(byAlgo).map(algo=>{
+    const arr = byAlgo[algo];
+    const attempts = arr.length;
+    const bestVisited = Math.max(...arr.map(a=>a.visited || 0));
+    const bestTime = Math.min(...arr.filter(a=> (a.visited||0)===bestVisited ).map(a=>a.elapsed));
+    const bestScore = Math.max(...arr.map(a=>a.score||0));
+    return { algo, attempts, bestVisited, bestTime, bestScore };
+  }).sort((a,b)=> b.bestVisited - a.bestVisited || a.bestTime - b.bestTime || b.bestScore - a.bestScore);
+  if (tableEl) {
+    tableEl.innerHTML = rows.map((r,i)=>`<tr class="border-t border-gray-800"><td class="py-1 text-right font-mono">${i+1}</td><td class="py-1">${escapeHtml(r.algo)}</td><td class="py-1 text-right font-mono">${r.bestVisited}</td><td class="py-1 text-right font-mono">${r.bestTime.toFixed(1)}s</td><td class="py-1 text-right font-mono">${r.attempts}</td></tr>`).join('');
+  }
+  // Fallback small summary + recent list if present
+  // pick best overall run by visited desc, then elapsed asc (5min cap applies when ranking)
+  const best = runs.slice().sort((a,b)=> {
+    const va = (a.visited||0), vb = (b.visited||0);
+    if (vb !== va) return vb - va;
+    const ea = Math.min(a.elapsed || 9999, 300), eb = Math.min(b.elapsed || 9999, 300);
+    if (ea !== eb) return ea - eb;
+    return (a.restarts||0) - (b.restarts||0);
+  })[0];
+  if (bestEl) bestEl.textContent = `Best: ${best.algo} — ${best.visited} cells — ${best.elapsed.toFixed(1)}s (${new Date(best.t).toLocaleString()})`;
+  if (recentEl) recentEl.innerHTML = runs.slice(-20).reverse().map(r=>{
+    return `<div class="p-1 border-b border-gray-800">[${new Date(r.t).toLocaleTimeString()}] ${r.algo} — ${r.score}pts — ${r.elapsed.toFixed(1)}s</div>`;
+  }).join('');
+}
+
+document.addEventListener('click', (e)=>{
+  if (e.target && e.target.id === 'btnClearHistory') { localStorage.removeItem('maze_runs'); renderLeaderboard(); renderMapSummary(); }
+  if (e.target && e.target.id === 'btnDumpRuns') { const runs = loadRuns(); console.log('maze_runs', runs); alert('Dumped runs to console. Count: '+runs.length); }
+});
+
+// ========== MAP-SPECIFIC SUMMARY ==========
+function renderMapSummary() {
+  const key = getMapKey();
+  const runs = loadRuns().filter(r=>r.map === key);
+  const table = document.getElementById('mapSummaryTable');
+  const info = document.getElementById('mapSummaryInfo');
+  if (!table || !info) return;
+  if (runs.length === 0) { info.textContent = 'No runs for this map'; table.innerHTML = ''; return; }
+  // Group by algo
+  const byAlgo = {};
+  runs.forEach(r=>{ if (!byAlgo[r.algo]) byAlgo[r.algo]=[]; byAlgo[r.algo].push(r); });
+  const rows = Object.keys(byAlgo).map(algo=>{
+    const arr = byAlgo[algo];
+    const attempts = arr.length;
+    const bestVisited = Math.max(...arr.map(a=>a.visited || 0));
+    const bestTime = Math.min(...arr.filter(a=> (a.visited||0)===bestVisited ).map(a=>a.elapsed));
+    const bestScore = Math.max(...arr.map(a=>a.score||0));
+    return { algo, attempts, bestVisited, bestTime, bestScore };
+  }).sort((a,b)=> b.bestVisited - a.bestVisited || a.bestTime - b.bestTime || b.bestScore - a.bestScore);
+  table.innerHTML = rows.map((r,i)=>`<tr class="border-t border-gray-800"><td class="py-1 text-right font-mono">${i+1}</td><td class="py-1">${escapeHtml(r.algo)}</td><td class="py-1 text-right font-mono">${r.bestVisited}</td><td class="py-1 text-right font-mono">${r.bestTime.toFixed(1)}s</td><td class="py-1 text-right font-mono">${r.attempts}</td></tr>`).join('');
+  info.textContent = `${runs.length} runs — best: ${rows[0].algo} ${rows[0].bestScore}pts / ${rows[0].bestTime.toFixed(1)}s`;
+}
+
+function start() {
+  if (running) return;
+  running = true;
+  startTime = Date.now() - elapsed*1000;
+  resetAlgo();
+  visited.add('6,0');
+  const speed = parseInt(document.getElementById('speedSlider').value);
+  intervalId = setInterval(stepOnce, speed);
+  document.getElementById('btnStart').textContent = 'Stop';
+  document.getElementById('btnStart').classList.replace('bg-emerald-600','bg-red-600');
+  document.getElementById('btnStart').classList.replace('hover:bg-emerald-700','hover:bg-red-700');
+}
+
+function stop() {
+  running = false;
+  clearInterval(intervalId);
+  document.getElementById('btnStart').textContent = 'Start';
+  document.getElementById('btnStart').classList.replace('bg-red-600','bg-emerald-600');
+  document.getElementById('btnStart').classList.replace('hover:bg-red-700','hover:bg-emerald-700');
+}
+
+function resetRobot() {
+  stop();
+  robot = {r:6,c:0,dir:0};
+  visited = new Set();
+  elapsed = 0;
+  wheelRotation = 0;
+  restarts++;
+  resetAlgo();
+  updateStats();
+  renderMaze();
+}
+
+// ========== CODE VIEWER ==========
+const codeData = {
+  dfs: {
+    thai: `อัลกอริทึม DFS (Depth-First Search)\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nหลักการ:\n1. เริ่มจากจุดเริ่มต้น เก็บเข้า stack\n2. ดูเซลล์ปัจจุบัน - ถ้ามีทางไปเซลล์ที่ยังไม่เคยไป\n   → เดินไปทางนั้น แล้ว push เข้า stack\n3. ถ้าไม่มีทางไปเซลล์ใหม่\n   → ย้อนกลับ (pop stack) ไปเซลล์ก่อนหน้า\n4. ทำซ้ำจนไปครบทุกเซลล์ที่เข้าถึงได้\n\nข้อดี: ค้นหาครบทุกเซลล์แน่นอน\nข้อเสีย: อาจไม่ใช่เส้นทางสั้นที่สุด\n\nเซ็นเซอร์ที่ใช้:\n- Front: ตรวจผนังด้านหน้า\n- Left: ตรวจผนังด้านซ้าย\n- Right: ตรวจผนังด้านขวา`,
+    python: `# DFS Maze Explorer Algorithm\ndef dfs_explore(maze, start):\n    stack = [start]\n    visited = set([start])\n    \n    while stack:\n        current = stack[-1]\n        neighbors = get_unvisited_neighbors(current, maze, visited)\n        \n        if neighbors:\n            next_cell = neighbors[0]\n            visited.add(next_cell)\n            stack.append(next_cell)\n            move_to(next_cell)\n        else:\n            stack.pop()\n            if stack:\n                move_to(stack[-1])\n    \n    return visited\n\ndef get_unvisited_neighbors(cell, maze, visited):\n    r, c = cell\n    neighbors = []\n    for dr, dc in [(-1,0),(0,1),(1,0),(0,-1)]:\n        nr, nc = r+dr, c+dc\n        if not has_wall(r,c,dr,dc) and (nr,nc) not in visited:\n            neighbors.append((nr, nc))\n    return neighbors`,
+    spike: `# SPIKE Prime v3 - DFS Maze Explorer\nimport runloop\nimport motor\nimport distance_sensor\nfrom hub import port\n\n# Motor + sensor ports (A/B/C/D/E/F)\nLEFT_MOTOR = port.A\nRIGHT_MOTOR = port.B\nLEFT_SENSOR = port.C\nRIGHT_SENSOR = port.D\nEMPTY_PORT = port.E\nFRONT_SENSOR = port.F\n\nDIST_THRESHOLD = 100  # mm threshold for wall\nCELL_DEGREES = 360    # motor degrees per cell\nTURN_DEGREES = 155    # degrees for 90° turn\n\nasync def move_forward():\n    motor.run_for_degrees(LEFT_MOTOR, CELL_DEGREES, 400)\n    motor.run_for_degrees(RIGHT_MOTOR, CELL_DEGREES, 400)\n    await runloop.sleep_ms(500)\n\nasync def turn_left():\n    motor.run_for_degrees(LEFT_MOTOR, -TURN_DEGREES, 300)\n    motor.run_for_degrees(RIGHT_MOTOR, TURN_DEGREES, 300)\n    await runloop.sleep_ms(400)\n\nasync def turn_right():\n    motor.run_for_degrees(LEFT_MOTOR, TURN_DEGREES, 300)\n    motor.run_for_degrees(RIGHT_MOTOR, -TURN_DEGREES, 300)\n    await runloop.sleep_ms(400)\n\ndef wall_front():\n    return distance_sensor.distance(FRONT_SENSOR) < DIST_THRESHOLD\n\ndef wall_left():\n    return distance_sensor.distance(LEFT_SENSOR) < DIST_THRESHOLD\n\ndef wall_right():\n    return distance_sensor.distance(RIGHT_SENSOR) < DIST_THRESHOLD\n\nasync def dfs_explore():\n    stack = [(0, 0, 'N')]\n    visited = set()\n    visited.add((0, 0))\n    \n    while len(stack) > 0:\n        r, c, facing = stack[-1]\n        moved = False\n        \n        # Try forward\n        if not wall_front():\n            await move_forward()\n            nr, nc = get_next_cell(r, c, facing)\n            if (nr, nc) not in visited:\n                visited.add((nr, nc))\n                stack.append((nr, nc, facing))\n                moved = True\n        # Try left\n        if not moved:\n            await turn_left()\n            if not wall_front():\n                await move_forward()\n                nr, nc = get_next_cell(r, c, turn_facing(facing, 'L'))\n                if (nr, nc) not in visited:\n                    visited.add((nr, nc))\n                    stack.append((nr, nc, turn_facing(facing, 'L')))\n                    moved = True\n        \n        if not moved:\n            stack.pop()\n            if len(stack) > 0:\n                await turn_right()\n                await turn_right()\n                await move_forward()\n\nasync def main():\n    await dfs_explore()\n\nrunloop.run(main())`,
+  },
+  wall_follower: {
+    thai: `อัลกอริทึม Wall Follower\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nหลักการ:\n1. เลือกผนังด้านหนึ่ง (ซ้ายหรือขวา) เป็นตัวนำทาง\n2. พยายามเดินตามผนังนั้นตลอด\n3. ถ้าผนังด้านที่ติดตามหายไป → เลี้ยวเข้าหา\n4. ถ้าข้างหน้าตัน → เลี้ยวออก\n\nลำดับตรวจสอบ (Wall Follower ซ้าย):\n① ซ้ายว่างไหม? → เลี้ยวซ้ายแล้วเดินหน้า\n② หน้าว่างไหม? → เดินหน้า\n③ ขวาว่างไหม? → เลี้ยวขวาแล้วเดินหน้า\n④ กลับหลังหัน\n\nข้อดี: ง่าย ใช้ได้กับเขาวงกตที่เชื่อมต่อกัน\nข้อเสีย: อาจไม่ครบทุกเซลล์ถ้ามี island`,
+    python: `# Wall Follower Algorithm\ndef wall_follower(maze, start, hand='left'):\n    pos = start\n    facing = 'N'  # N, E, S, W\n    visited = set([start])\n    \n    while not all_visited(visited, maze):\n        if hand == 'left':\n            # Priority: left, front, right, back\n            check_order = [\n                turn_left(facing),\n                facing,\n                turn_right(facing),\n                turn_back(facing)\n            ]\n        else:\n            check_order = [\n                turn_right(facing),\n                facing,\n                turn_left(facing),\n                turn_back(facing)\n            ]\n        \n        for direction in check_order:\n            if not has_wall(pos, direction, maze):\n                facing = direction\n                pos = move(pos, facing)\n                visited.add(pos)\n                break\n    \n    return visited`,
+    spike: `# SPIKE Prime v3 - Wall Follower\nimport runloop\nimport motor\nimport distance_sensor\nfrom hub import port\n\nLEFT_MOTOR = port.A\nRIGHT_MOTOR = port.B\nFRONT_SENSOR = port.C\nLEFT_SENSOR = port.D\nRIGHT_SENSOR = port.E\n\nDIST_THRESHOLD = 100\nCELL_DEGREES = 360\nTURN_DEGREES = 155\n\nasync def move_forward():\n    motor.run_for_degrees(LEFT_MOTOR, CELL_DEGREES, 400)\n    motor.run_for_degrees(RIGHT_MOTOR, CELL_DEGREES, 400)\n    await runloop.sleep_ms(500)\n\nasync def turn_left():\n    motor.run_for_degrees(LEFT_MOTOR, -TURN_DEGREES, 300)\n    motor.run_for_degrees(RIGHT_MOTOR, TURN_DEGREES, 300)\n    await runloop.sleep_ms(400)\n\nasync def turn_right():\n    motor.run_for_degrees(LEFT_MOTOR, TURN_DEGREES, 300)\n    motor.run_for_degrees(RIGHT_MOTOR, -TURN_DEGREES, 300)\n    await runloop.sleep_ms(400)\n\nasync def turn_around():\n    await turn_right()\n    await turn_right()\n\ndef wall_front():\n    return distance_sensor.distance(FRONT_SENSOR) < DIST_THRESHOLD\n\ndef wall_left():\n    return distance_sensor.distance(LEFT_SENSOR) < DIST_THRESHOLD\n\ndef wall_right():\n    return distance_sensor.distance(RIGHT_SENSOR) < DIST_THRESHOLD\n\nasync def wall_follower_left():\n    \"\"\"Left-hand wall follower\"\"\"\n    while True:\n        if not wall_left():\n            await turn_left()\n            await move_forward()\n        elif not wall_front():\n            await move_forward()\n        elif not wall_right():\n            await turn_right()\n            await move_forward()\n        else:\n            await turn_around()\n        await runloop.sleep_ms(100)\n\nasync def main():\n    await wall_follower_left()\n\nrunloop.run(main())`
+  },
+  left_hand: {
+    thai: `อัลกอริทึม Left-hand Rule\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nหลักการ:\n- เหมือน Wall Follower แต่กำหนดใช้มือซ้ายเสมอ\n- จินตนาการว่าเอามือซ้ายแตะผนังตลอดเวลา\n\nลำดับการตัดสินใจ:\n① ซ้ายเปิด? → เลี้ยวซ้าย + เดินหน้า\n② หน้าเปิด? → เดินหน้า\n③ ขวาเปิด? → เลี้ยวขวา + เดินหน้า\n④ ตันทุกทาง → กลับหลังหัน\n\nเหมาะกับ: เขาวงกตแบบ simply-connected\n(ทุกผนังเชื่อมต่อกับขอบนอก)`,
+    python: `# Left-hand Rule Algorithm\ndef left_hand_rule(maze, start):\n    pos = start\n    facing = 'N'\n    visited = set([start])\n    \n    while not exploration_complete(visited, maze):\n        left_dir = turn_left(facing)\n        \n        # Priority: left, straight, right, back\n        if not has_wall(pos, left_dir, maze):\n            facing = left_dir\n            pos = move(pos, facing)\n        elif not has_wall(pos, facing, maze):\n            pos = move(pos, facing)\n        elif not has_wall(pos, turn_right(facing), maze):\n            facing = turn_right(facing)\n            pos = move(pos, facing)\n        else:\n            facing = turn_back(facing)\n        \n        visited.add(pos)\n    \n    return visited`,
+    spike: `# SPIKE Prime v3 - Left-hand Rule\nimport runloop\nimport motor\nimport distance_sensor\nfrom hub import port\n\nLEFT_MOTOR = port.A\nRIGHT_MOTOR = port.B\nFRONT_SENSOR = port.C\nLEFT_SENSOR = port.D\n\nDIST_THRESHOLD = 100\nCELL_DEGREES = 360\nTURN_DEGREES = 155\n\nasync def move_forward():\n    motor.run_for_degrees(LEFT_MOTOR, CELL_DEGREES, 400)\n    motor.run_for_degrees(RIGHT_MOTOR, CELL_DEGREES, 400)\n    await runloop.sleep_ms(500)\n\nasync def turn_left():\n    motor.run_for_degrees(LEFT_MOTOR, -TURN_DEGREES, 300)\n    motor.run_for_degrees(RIGHT_MOTOR, TURN_DEGREES, 300)\n    await runloop.sleep_ms(400)\n\nasync def turn_right():\n    motor.run_for_degrees(LEFT_MOTOR, TURN_DEGREES, 300)\n    motor.run_for_degrees(RIGHT_MOTOR, -TURN_DEGREES, 300)\n    await runloop.sleep_ms(400)\n\ndef wall_front():\n    return distance_sensor.distance(FRONT_SENSOR) < DIST_THRESHOLD\n\ndef wall_left():\n    return distance_sensor.distance(LEFT_SENSOR) < DIST_THRESHOLD\n\nasync def left_hand():\n    \"\"\"Left-hand rule: always keep left hand on wall\"\"\"\n    while True:\n        if not wall_left():\n            # Left is open - turn left and go\n            await turn_left()\n            await move_forward()\n        elif not wall_front():\n            # Front is open - go straight\n            await move_forward()\n        else:\n            # Front and left blocked - turn right\n            await turn_right()\n        await runloop.sleep_ms(100)\n\nasync def main():\n    await left_hand()\n\nrunloop.run(main())`
+  },
+  right_hand: {
+    thai: `อัลกอริทึม Right-hand Rule\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nหลักการ:\n- เหมือน Left-hand แต่ใช้มือขวาแตะผนังแทน\n- เหมาะกับบางเขาวงกตที่ left-hand ไม่ครอบคลุม\n\nลำดับการตัดสินใจ:\n① ขวาเปิด? → เลี้ยวขวา + เดินหน้า\n② หน้าเปิด? → เดินหน้า\n③ ซ้ายเปิด? → เลี้ยวซ้าย + เดินหน้า\n④ ตันทุกทาง → กลับหลังหัน\n\nเหมาะกับ: เขาวงกตแบบ simply-connected\nข้อดี: complement กับ Left-hand rule`,
+    python: `# Right-hand Rule Algorithm\ndef right_hand_rule(maze, start):\n    pos = start\n    facing = 'N'\n    visited = set([start])\n    \n    while not exploration_complete(visited, maze):\n        right_dir = turn_right(facing)\n        \n        # Priority: right, straight, left, back\n        if not has_wall(pos, right_dir, maze):\n            facing = right_dir\n            pos = move(pos, facing)\n        elif not has_wall(pos, facing, maze):\n            pos = move(pos, facing)\n        elif not has_wall(pos, turn_left(facing), maze):\n            facing = turn_left(facing)\n            pos = move(pos, facing)\n        else:\n            facing = turn_back(facing)\n        \n        visited.add(pos)\n    \n    return visited`,
+    spike: `# SPIKE Prime v3 - Right-hand Rule\nimport runloop\nimport motor\nimport distance_sensor\nfrom hub import port\n\nLEFT_MOTOR = port.A\nRIGHT_MOTOR = port.B\nFRONT_SENSOR = port.C\nRIGHT_SENSOR = port.E\n\nDIST_THRESHOLD = 100\nCELL_DEGREES = 360\nTURN_DEGREES = 155\n\nasync def move_forward():\n    motor.run_for_degrees(LEFT_MOTOR, CELL_DEGREES, 400)\n    motor.run_for_degrees(RIGHT_MOTOR, CELL_DEGREES, 400)\n    await runloop.sleep_ms(500)\n\nasync def turn_left():\n    motor.run_for_degrees(LEFT_MOTOR, -TURN_DEGREES, 300)\n    motor.run_for_degrees(RIGHT_MOTOR, TURN_DEGREES, 300)\n    await runloop.sleep_ms(400)\n\nasync def turn_right():\n    motor.run_for_degrees(LEFT_MOTOR, TURN_DEGREES, 300)\n    motor.run_for_degrees(RIGHT_MOTOR, -TURN_DEGREES, 300)\n    await runloop.sleep_ms(400)\n\ndef wall_front():\n    return distance_sensor.distance(FRONT_SENSOR) < DIST_THRESHOLD\n\ndef wall_right():\n    return distance_sensor.distance(RIGHT_SENSOR) < DIST_THRESHOLD\n\nasync def right_hand():\n    \"\"\"Right-hand rule: always keep right hand on wall\"\"\"\n    while True:\n        if not wall_right():\n            # Right is open - turn right and go\n            await turn_right()\n            await move_forward()\n        elif not wall_front():\n            # Front is open - go straight\n            await move_forward()\n        else:\n            # Front and right blocked - turn left\n            await turn_left()\n        await runloop.sleep_ms(100)\n\nasync def main():\n    await right_hand()\n\nrunloop.run(main())`
+  },
+  random_walk: {
+    thai: `อัลกอริทึม Random Walk\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nหลักการ:\n1. ดูทางที่เปิดอยู่ทั้งหมด (ไม่มีผนังกั้น)\n2. สุ่มเลือก 1 ทาง\n3. เดินไปทางนั้น\n4. ทำซ้ำ\n\nข้อดี:\n- ง่ายมาก ไม่ต้องจำอะไร\n- ใช้หน่วยความจำน้อย\n\nข้อเสีย:\n- ไม่มีประสิทธิภาพ อาจวนซ้ำจุดเดิม\n- ไม่รับประกันว่าจะครบทุกเซลล์\n- ใช้เวลานานมากในเขาวงกตใหญ่`,
+    python: `# Random Walk Algorithm\nimport random\n\ndef random_walk(maze, start, max_steps=1000):\n    pos = start\n    visited = set([start])\n    steps = 0\n    \n    while steps < max_steps:\n        # Get all open directions\n        open_dirs = []\n        for d in ['N', 'E', 'S', 'W']:\n            if not has_wall(pos, d, maze):\n                open_dirs.append(d)\n        \n        if not open_dirs:\n            break\n        \n        # Random choice\n        chosen = random.choice(open_dirs)\n        pos = move(pos, chosen)\n        visited.add(pos)\n        steps += 1\n    \n    return visited`,
+    spike: `# SPIKE Prime v3 - Random Walk\nimport runloop\nimport motor\nimport distance_sensor\nfrom hub import port\nimport random\n\nLEFT_MOTOR = port.A\nRIGHT_MOTOR = port.B\nFRONT_SENSOR = port.C\nLEFT_SENSOR = port.D\nRIGHT_SENSOR = port.E\n\nDIST_THRESHOLD = 100\nCELL_DEGREES = 360\nTURN_DEGREES = 155\n\nasync def move_forward():\n    motor.run_for_degrees(LEFT_MOTOR, CELL_DEGREES, 400)\n    motor.run_for_degrees(RIGHT_MOTOR, CELL_DEGREES, 400)\n    await runloop.sleep_ms(500)\n\nasync def turn_left():\n    motor.run_for_degrees(LEFT_MOTOR, -TURN_DEGREES, 300)\n    motor.run_for_degrees(RIGHT_MOTOR, TURN_DEGREES, 300)\n    await runloop.sleep_ms(400)\n\nasync def turn_right():\n    motor.run_for_degrees(LEFT_MOTOR, TURN_DEGREES, 300)\n    motor.run_for_degrees(RIGHT_MOTOR, -TURN_DEGREES, 300)\n    await runloop.sleep_ms(400)\n\ndef wall_front():\n    return distance_sensor.distance(FRONT_SENSOR) < DIST_THRESHOLD\n\ndef wall_left():\n    return distance_sensor.distance(LEFT_SENSOR) < DIST_THRESHOLD\n\ndef wall_right():\n    return distance_sensor.distance(RIGHT_SENSOR) < DIST_THRESHOLD\n\nasync def random_walk():\n    \"\"\"Random exploration - pick random open direction\"\"\"\n    while True:\n        options = []\n        if not wall_front():\n            options.append('F')\n        if not wall_left():\n            options.append('L')\n        if not wall_right():\n            options.append('R')\n        \n        if len(options) == 0:\n            # Dead end - turn around\n            await turn_left()\n            await turn_left()\n        else:\n            choice = random.choice(options)\n            if choice == 'F':\n                await move_forward()\n            elif choice == 'L':\n                await turn_left()\n                await move_forward()\n            elif choice == 'R':\n                await turn_right()\n                await move_forward()\n        \n        await runloop.sleep_ms(100)\n\nasync def main():\n    await random_walk()\n\nrunloop.run(main())`
+  },
+  astar: {
+    thai: `อัลกอริทึม A* (A-Star)\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nหลักการ:\n1. ใช้ priority queue เรียงลำดับตาม f(n) = g(n) + h(n)\n   - g(n) = ระยะทางจริงจากจุดเริ่ม\n   - h(n) = ระยะทางประมาณไปเป้าหมาย (Manhattan)\n2. เลือกเซลล์ที่มี f ต่ำสุดมาสำรวจ\n3. ขยายเพื่อนบ้านที่ยังไม่เคยไป\n4. ทำซ้ำจนถึงเป้าหมาย\n\nในจำลองนี้:\n- หาเซลล์ที่ไกลที่สุดที่ยังไม่เคยไปเป็นเป้า\n- ใช้ BFS หาเส้นทางสั้นสุด\n- เดินตามเส้นทางนั้น\n\nข้อดี: เส้นทางสั้นที่สุดเสมอ\nข้อเสีย: ต้องรู้แผนที่ทั้งหมดล่วงหน้า`,
+    python: `# A* Pathfinding Algorithm\nimport heapq\n\ndef astar(maze, start, goal):\n    open_set = [(0, start)]\n    came_from = {}\n    g_score = {start: 0}\n    f_score = {start: heuristic(start, goal)}\n    \n    while open_set:\n        _, current = heapq.heappop(open_set)\n        \n        if current == goal:\n            return reconstruct_path(came_from, current)\n        \n        for neighbor in get_neighbors(current, maze):\n            tentative_g = g_score[current] + 1\n            \n            if tentative_g < g_score.get(neighbor, float('inf')):\n                came_from[neighbor] = current\n                g_score[neighbor] = tentative_g\n                f_score[neighbor] = tentative_g + heuristic(neighbor, goal)\n                heapq.heappush(open_set, (f_score[neighbor], neighbor))\n    \n    return []  # No path found\n\ndef heuristic(a, b):\n    return abs(a[0]-b[0]) + abs(a[1]-b[1])\n\ndef reconstruct_path(came_from, current):\n    path = [current]\n    while current in came_from:\n        current = came_from[current]\n        path.append(current)\n    return list(reversed(path))`,
+    spike: `# SPIKE Prime v3 - A* Navigator\n# Note: A* requires map knowledge.\n# This version uses iterative deepening with sensors.\nimport runloop\nimport motor\nimport distance_sensor\nfrom hub import port\n\nLEFT_MOTOR = port.A\nRIGHT_MOTOR = port.B\nFRONT_SENSOR = port.C\nLEFT_SENSOR = port.D\nRIGHT_SENSOR = port.E\n\nDIST_THRESHOLD = 100\nCELL_DEGREES = 360\nTURN_DEGREES = 155\n\n# Map representation (built during exploration)\nmap_data = {}  # (r,c): {'N':bool, 'E':bool, 'S':bool, 'W':bool}\ncurrent_pos = (0, 0)\nfacing = 'N'\n\nasync def move_forward():\n    global current_pos, facing\n    motor.run_for_degrees(LEFT_MOTOR, CELL_DEGREES, 400)\n    motor.run_for_degrees(RIGHT_MOTOR, CELL_DEGREES, 400)\n    await runloop.sleep_ms(500)\n    dr = {'N':-1,'S':1,'E':0,'W':0}\n    dc = {'N':0,'S':0,'E':1,'W':-1}\n    r, c = current_pos\n    current_pos = (r + dr[facing], c + dc[facing])\n\nasync def turn_left():\n    global facing\n    motor.run_for_degrees(LEFT_MOTOR, -TURN_DEGREES, 300)\n    motor.run_for_degrees(RIGHT_MOTOR, TURN_DEGREES, 300)\n    await runloop.sleep_ms(400)\n    turns = {'N':'W','W':'S','S':'E','E':'N'}\n    facing = turns[facing]\n\nasync def turn_right():\n    global facing\n    motor.run_for_degrees(LEFT_MOTOR, TURN_DEGREES, 300)\n    motor.run_for_degrees(RIGHT_MOTOR, -TURN_DEGREES, 300)\n    await runloop.sleep_ms(400)\n    turns = {'N':'E','E':'S','S':'W','W':'N'}\n    facing = turns[facing]\n\ndef scan_walls():\n    \"\"\"Record walls at current position\"\"\"\n    walls = {}\n    walls[facing] = distance_sensor.distance(FRONT_SENSOR) < DIST_THRESHOLD\n    left_dir = {'N':'W','W':'S','S':'E','E':'N'}[facing]\n    right_dir = {'N':'E','E':'S','S':'W','W':'N'}[facing]\n    walls[left_dir] = distance_sensor.distance(LEFT_SENSOR) < DIST_THRESHOLD\n    walls[right_dir] = distance_sensor.distance(RIGHT_SENSOR) < DIST_THRESHOLD\n    map_data[current_pos] = walls\n\ndef find_nearest_unvisited():\n    \"\"\"BFS to find nearest unvisited reachable cell\"\"\"\n    from collections import deque\n    queue = deque([(current_pos, [])])\n    seen = set([current_pos])\n    while queue:\n        pos, path = queue.popleft()\n        if pos not in map_data:\n            return path + [pos]\n        for d in ['N','E','S','W']:\n            if not map_data[pos].get(d, True):\n                dr = {'N':-1,'S':1,'E':0,'W':0}\n                dc = {'N':0,'S':0,'E':1,'W':-1}\n                npos = (pos[0]+dr[d], pos[1]+dc[d])\n                if npos not in seen:\n                    seen.add(npos)\n                    queue.append((npos, path + [npos]))\n    return []\n\nasync def navigate_to(target_path):\n    for target in target_path:\n        # Turn to face target\n        dr = target[0] - current_pos[0]\n        dc = target[1] - current_pos[1]\n        need_facing = ''\n        if dr == -1: need_facing = 'N'\n        elif dr == 1: need_facing = 'S'\n        elif dc == 1: need_facing = 'E'\n        elif dc == -1: need_facing = 'W'\n        \n        while facing != need_facing:\n            await turn_right()\n        await move_forward()\n\nasync def astar_explore():\n    while True:\n        scan_walls()\n        path = find_nearest_unvisited()\n        if not path:\n            break\n        await navigate_to(path)\n\nasync def main():\n    await astar_explore()\n\nrunloop.run(main())`
+  }
+};
+
+function renderCode() {
+  const algo = document.getElementById('algoSelect').value;
+  const data = codeData[algo]?.[currentTab] || 'No code available';
+  const lines = data.split('\n');
+  const container = document.getElementById('codeContent');
+  if (currentTab === 'thai') {
+    container.innerHTML = `<pre class="whitespace-pre-wrap text-gray-200 leading-relaxed">${escapeHtml(data)}</pre>`;
+  } else {
+    const html = lines.map(l => `<div class="line">${escapeHtml(l)}</div>`).join('');
+    container.innerHTML = `<div class="code-block text-green-300">${html}</div>`;
+  }
+}
+
+function escapeHtml(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function copyCode() {
+  const algo = document.getElementById('algoSelect').value;
+  const data = codeData[algo]?.[currentTab] || '';
+  navigator.clipboard.writeText(data).then(() => {
+    const btn = document.getElementById('btnCopy');
+    btn.innerHTML = '<i data-lucide="check" style="width:12px;height:12px"></i> Copied!';
+    setTimeout(() => { btn.innerHTML = '<i data-lucide="copy" style="width:12px;height:12px"></i> Copy'; lucide.createIcons(); }, 1500);
+  });
+}
+
+// ========== INIT ==========
+function init() {
+  generateMaze();
+  robot = {r:6,c:0,dir:0};
+  visited = new Set();
+  restarts = 0; elapsed = 0;
+  wheelRotation = 0;
+  updateStats();
+  renderMaze();
+  renderCode();
+  renderLeaderboard();
+  renderMapSummary();
+}
+
+document.getElementById('btnStart').addEventListener('click', () => { running ? stop() : start(); });
+document.getElementById('btnReset').addEventListener('click', resetRobot);
+document.getElementById('btnRandomize').addEventListener('click', () => { stop(); restarts=0; elapsed=0; visited=new Set(); robot={r:6,c:0,dir:0}; wheelRotation=0; generateMaze(); updateStats(); renderMaze(); });
+document.getElementById('algoSelect').addEventListener('change', renderCode);
+document.getElementById('speedSlider').addEventListener('input', (e) => {
+  document.getElementById('speedVal').textContent = e.target.value+'ms';
+  if (running) { clearInterval(intervalId); intervalId = setInterval(stepOnce, parseInt(e.target.value)); }
+});
+document.getElementById('btnCopy').addEventListener('click', copyCode);
+
+document.querySelectorAll('.code-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.code-tab').forEach(b => { b.classList.remove('bg-emerald-600','text-white'); b.classList.add('bg-gray-700','text-gray-300'); });
+    btn.classList.remove('bg-gray-700','text-gray-300'); btn.classList.add('bg-emerald-600','text-white');
+    currentTab = btn.dataset.tab;
+    renderCode();
+  });
+});
+
+// Element SDK
+const defaultConfig = { app_title: 'CARC Maze Explorer', primary_color: '#10b981', bg_color: '#030712', surface_color: '#111827', text_color: '#f3f4f6', accent_color: '#6366f1', font_family: 'Sarabun', font_size: 14 };
+window.elementSdk.init({
+  defaultConfig,
+  onConfigChange: async (config) => {
+    document.getElementById('appTitle').lastChild.textContent = ' ' + (config.app_title || defaultConfig.app_title);
+  },
+  mapToCapabilities: (config) => ({
+    recolorables: [
+      { get: () => config.bg_color || defaultConfig.bg_color, set: (v) => { config.bg_color = v; window.elementSdk.setConfig({bg_color:v}); }},
+      { get: () => config.surface_color || defaultConfig.surface_color, set: (v) => { config.surface_color = v; window.elementSdk.setConfig({surface_color:v}); }},
+      { get: () => config.text_color || defaultConfig.text_color, set: (v) => { config.text_color = v; window.elementSdk.setConfig({text_color:v}); }},
+      { get: () => config.primary_color || defaultConfig.primary_color, set: (v) => { config.primary_color = v; window.elementSdk.setConfig({primary_color:v}); }},
+      { get: () => config.accent_color || defaultConfig.accent_color, set: (v) => { config.accent_color = v; window.elementSdk.setConfig({accent_color:v}); }}
+    ],
+    borderables: [],
+    fontEditable: { get: () => config.font_family || defaultConfig.font_family, set: (v) => { config.font_family = v; window.elementSdk.setConfig({font_family:v}); }},
+    fontSizeable: { get: () => config.font_size || defaultConfig.font_size, set: (v) => { config.font_size = v; window.elementSdk.setConfig({font_size:v}); }}
+  }),
+  mapToEditPanelValues: (config) => new Map([['app_title', config.app_title || defaultConfig.app_title]])
+});
+
+init();
+lucide.createIcons();
+</script>
+</body>
+</html>

@@ -1,0 +1,1644 @@
+<!doctype html>
+<html lang="th">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Maze Explorer - LEGO Spike Prime Simulator</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.263.0/dist/umd/lucide.min.js"></script>
+  <script src="/_sdk/element_sdk.js"></script>
+  <style>
+    body, html { height: 100%; }
+    
+ 
+    .maze-cell {
+      position: relative;
+      background: #ffffff;
+      box-shadow: none;
+      border: 0px solid #1a1a1a;
+    }
+    
+    .maze-cell.visited {
+      background: #e0f2fe;
+    }
+    
+    .maze-cell.current {
+      background: #fef08a;
+      position: relative;
+    }
+    
+    .maze-cell.trail {
+      background: #dbeafe;
+      position: relative;
+    }
+    
+    /* Robot - seen from top view */
+    .robot {
+      width: 32px;
+      height: 32px;
+      background: radial-gradient(circle at 35% 35%, #ff6b6b, #c92a2a);
+      border-radius: 50%;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 10;
+      border: 3px solid #a61e4d;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3), inset -1px -1px 3px rgba(0,0,0,0.2);
+    }
+    
+    /* Direction indicator on robot */
+    .robot::after {
+      content: '';
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background: #ffd700;
+      border-radius: 50%;
+      top: 2px;
+      left: 50%;
+      transform: translateX(-50%);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+    }
+    
+    .algorithm-btn {
+      transition: all 0.3s ease;
+    }
+    
+    .algorithm-btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+    }
+    
+    .algorithm-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .stats-box {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border-radius: 12px;
+      padding: 16px;
+      margin: 8px 0;
+    }
+    
+    @keyframes pulse-sensor {
+      0%, 100% { opacity: 0.6; }
+      50% { opacity: 1; }
+    }
+    
+    .sensor-active {
+      animation: pulse-sensor 0.5s ease-in-out;
+    }
+    
+    #mazeContainer {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    
+    #maze {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 0;
+      background: #f9fafb;
+      aspect-ratio: 1;
+      width: 100%;
+      max-width: 420px;
+      border: 3px solid #1a1a1a;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+  </style>
+  <style>body { box-sizing: border-box; }</style>
+  <script src="/_sdk/data_sdk.js" type="text/javascript"></script>
+ <script src="/_sdk/telemetry_sdk.js"></script></head>
+ <body class="h-full bg-gradient-to-br from-blue-50 to-indigo-100">
+  <div class="h-full w-full overflow-auto bg-gradient-to-br from-blue-50 to-indigo-100 p-3 md:p-6">
+   <div class="max-w-7xl mx-auto">
+    <!-- Header -->
+    <div class="text-center mb-4 md:mb-6">
+     <h1 class="text-2xl md:text-4xl font-bold text-indigo-900 mb-2">🤖 Maze Explorer Simulator</h1>
+     <p class="text-sm md:text-base text-indigo-700">LEGO Spike Prime - จำลองหุ่นยนต์สำรวจเขาวง 7x7 (มองจากด้านบน)</p>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+     <!-- Left: Maze Display -->
+     <div class="lg:col-span-2">
+      <div class="bg-white rounded-lg shadow-lg p-4 md:p-6">
+       <h2 class="text-xl md:text-2xl font-bold text-gray-800 mb-4">🗺️ Maze (7x7) - มองจากด้านบน</h2>
+       <div id="mazeContainer" class="bg-gray-100 p-2 md:p-4 rounded-lg">
+        <div id="maze"></div>
+       </div>
+       <div class="mt-4 p-3 bg-blue-50 rounded border border-blue-200">
+        <p class="text-xs md:text-sm text-gray-700"><span id="posDisplay">Position: (0, 0)</span> | <span id="dirDisplay">Direction: ↑ (North)</span></p>
+       </div>
+       <div class="mt-2 p-2 bg-amber-50 rounded border border-amber-200 text-xs md:text-sm text-gray-700">
+        <p>📏 ขนาด: 42 cm × 42 cm | 🏗️ ขอบดำ: หนา 0.4 มม สูง 15 cm</p>
+       </div>
+      </div>
+     </div><!-- Right: Controls & Stats -->
+     <div class="flex flex-col gap-3 lg:gap-4">
+      <!-- Generator & Speed -->
+      <div class="bg-white rounded-lg shadow-lg p-2 md:p-3">
+       <h3 class="text-sm md:text-base font-bold text-gray-800 mb-2">⚙️ ควบคุม</h3>
+       <div class="flex gap-2 mb-2">
+        <button id="genMazeBtn" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-semibold py-1 px-3 rounded text-xs">🔄 สุ่ม</button>
+        <button id="resetBtn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold py-1 px-3 rounded text-xs">♻️ รีเซต</button>
+        <button id="startBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-1 px-3 rounded text-xs" disabled>▶️ เริ่ม</button>
+        <button id="stopBtn" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-1 px-3 rounded text-xs" disabled>⏹️ หยุด</button>
+       </div>
+       <div class="mb-1">
+        <label class="block text-xs font-semibold text-gray-700 mb-1">Speed: <span id="speedVal">150</span>ms</label>
+        <input id="speedSlider" type="range" min="50" max="500" value="150" step="50" class="w-full">
+       </div>
+      </div><!-- Algorithm Selection -->
+      <div class="bg-white rounded-lg shadow-lg p-3 md:p-4">
+       <h3 class="text-base md:text-lg font-bold text-gray-800 mb-3">🧠 เลือกอัลกอริธึม</h3>
+      <div class="space-y-2 max-h-80 overflow-y-auto">
+       <button class="algo-btn w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-1 px-2 rounded algorithm-btn text-xs" data-algo="rightwall">📍 Right Wall</button>
+       <button class="algo-btn w-full bg-purple-500 hover:bg-purple-600 text-white font-semibold py-1 px-2 rounded algorithm-btn text-xs" data-algo="leftwall">📍 Left Wall</button>
+       <button class="algo-btn w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-1 px-2 rounded algorithm-btn text-xs" data-algo="random">🎲 Random</button>
+       <button class="algo-btn w-full bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-1 px-2 rounded algorithm-btn text-xs" data-algo="uturn">🔄 U-Turn</button>
+       <button class="algo-btn w-full bg-pink-500 hover:bg-pink-600 text-white font-semibold py-1 px-2 rounded algorithm-btn text-xs" data-algo="maximize">⭐ Maximize</button>
+       <button class="algo-btn w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-1 px-2 rounded algorithm-btn text-xs" data-algo="smartmap">🗺️ SmartMap</button>
+       <button class="algo-btn w-full bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-1 px-2 rounded algorithm-btn text-xs" data-algo="astar">⭐ A*</button>
+      </div>
+      </div><!-- Stats -->
+      <div class="bg-white rounded-lg shadow-lg p-3 md:p-4 flex-1">
+       <h3 class="text-base md:text-lg font-bold text-gray-800 mb-3">📊 สถิติ</h3>
+       <div class="space-y-2 text-xs md:text-sm">
+        <div class="stats-box">
+         <p class="text-xs opacity-90">เซลล์ที่เยี่ยม</p>
+         <p class="text-2xl md:text-3xl font-bold" id="cellCount">0</p>
+        </div>
+        <div class="stats-box">
+         <p class="text-xs opacity-90">เวลา (วินาที)</p>
+         <p class="text-2xl md:text-3xl font-bold" id="timeDisplay">0.0s</p>
+        </div>
+        <div class="stats-box">
+         <p class="text-xs opacity-90">สกอร์ (เซลล์/วินาที)</p>
+         <p class="text-2xl md:text-3xl font-bold" id="scoreDisplay">0.0</p>
+        </div>
+        <div class="text-center text-xs text-gray-600 mt-3">
+         <p>สถานะ: <span id="statusText" class="font-bold text-indigo-600">พร้อม</span></p>
+        </div>
+       </div>
+      </div><!-- Sensor Readings -->
+      <div class="bg-white rounded-lg shadow-lg p-3 md:p-4">
+       <h3 class="text-base md:text-lg font-bold text-gray-800 mb-3">📡 Ultrasonic (Sensors)</h3>
+       <div class="space-y-2 text-xs md:text-sm font-mono">
+        <div class="bg-red-50 p-2 rounded border border-red-200">
+         <p class="text-xs text-gray-600">Front (หน้า)</p>
+         <p class="text-lg md:text-xl font-bold text-red-600" id="frontSensor">—</p>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+         <div class="bg-blue-50 p-2 rounded border border-blue-200">
+          <p class="text-xs text-gray-600">Left (ซ้าย)</p>
+          <p class="text-base md:text-lg font-bold text-blue-600" id="leftSensor">—</p>
+         </div>
+         <div class="bg-green-50 p-2 rounded border border-green-200">
+          <p class="text-xs text-gray-600">Right (ขวา)</p>
+          <p class="text-base md:text-lg font-bold text-green-600" id="rightSensor">—</p>
+         </div>
+        </div>
+       </div>
+      </div>
+     </div>
+    </div><!-- Python Code Export -->
+    <div class="bg-white rounded-lg shadow-lg p-4 md:p-6 mt-6">
+     <h3 class="text-lg md:text-xl font-bold text-gray-800 mb-3">🐍 Python Code สำหรับ LEGO Spike Prime</h3>
+     <div class="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+      <button id="exportPythonBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg transition transform hover:scale-105 flex items-center justify-center gap-2 text-sm md:text-base"> <i data-lucide="download"></i> ดาวน์โหลด Python Code </button> <button id="showCodeBtn" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg transition transform hover:scale-105 flex items-center justify-center gap-2 text-sm md:text-base"> <i data-lucide="code"></i> ดูโค้ด </button>
+     </div>
+     <div id="codeDisplay" class="mt-4 bg-gray-900 text-green-400 p-3 md:p-4 rounded-lg font-mono text-xs overflow-auto max-h-60 hidden">
+      <pre id="codeContent"></pre>
+     </div>
+    </div><!-- Leaderboard -->
+    <div class="bg-white rounded-lg shadow-lg p-4 md:p-6 mt-6">
+     <h3 class="text-lg md:text-xl font-bold text-gray-800 mb-3">🏆 Leaderboard</h3>
+     <div class="overflow-x-auto">
+      <table class="w-full text-xs md:text-sm">
+       <thead class="bg-indigo-100">
+        <tr>
+         <th class="px-2 md:px-4 py-2 text-left">อัลกอริธึม</th>
+         <th class="px-2 md:px-4 py-2 text-center">เซลล์</th>
+         <th class="px-2 md:px-4 py-2 text-center">เวลา (s)</th>
+         <th class="px-2 md:px-4 py-2 text-center">สกอร์</th>
+        </tr>
+       </thead>
+       <tbody id="leaderboard" class="divide-y">
+        <!-- Generated by JS -->
+       </tbody>
+      </table>
+     </div>
+    </div>
+   </div>
+  </div>
+  <script>
+    let elementSdk = window.elementSdk;
+    if (elementSdk) {
+      elementSdk.init({
+        defaultConfig: {
+          title: "Maze Explorer Simulator"
+        },
+        onConfigChange: async (config) => {},
+        mapToCapabilities: (config) => ({
+          recolorables: [],
+          borderables: [],
+          fontEditable: undefined,
+          fontSizeable: undefined
+        }),
+        mapToEditPanelValues: (config) => new Map([])
+      });
+    }
+
+    // Maze configuration
+    const MAZE_SIZE = 7;
+    const DIRECTIONS = [
+      { name: 'North', dx: 0, dy: -1, arrow: '↑' },
+      { name: 'East', dx: 1, dy: 0, arrow: '→' },
+      { name: 'South', dx: 0, dy: 1, arrow: '↓' },
+      { name: 'West', dx: -1, dy: 0, arrow: '←' }
+    ];
+
+    // Start position: bottom-left
+    const START_X = 0;
+    const START_Y = MAZE_SIZE - 1;
+    const START_KEY = `${START_X},${START_Y}`;
+
+    // State
+    let walls = {};  // เก็บขอบของแต่ละช่อง {cellId: {north, south, east, west}}
+    let robot = { x: 0, y: 0, dir: 0 };
+    let visited = new Set();
+    let isRunning = false;
+    let selectedAlgo = null;
+    let startTime = 0;
+    let timerInterval = null;
+    let scores = [];
+    let highlightEnabled = true; // whether to show visited/current/trail colors
+
+    // Generate random maze with walls (edges)
+    function generateMaze() {
+      walls = {};
+      
+      // Initialize all cells with walls
+      for (let y = 0; y < MAZE_SIZE; y++) {
+        for (let x = 0; x < MAZE_SIZE; x++) {
+          const id = `${x},${y}`;
+          walls[id] = {
+            north: y === 0,  // outer wall
+            south: y === MAZE_SIZE - 1,  // outer wall
+            east: x === MAZE_SIZE - 1,  // outer wall
+            west: x === 0   // outer wall
+          };
+        }
+      }
+
+      // Random internal walls (50% probability per internal wall)
+      for (let y = 0; y < MAZE_SIZE; y++) {
+        for (let x = 0; x < MAZE_SIZE; x++) {
+          const id = `${x},${y}`;
+          
+          // Internal north wall (between this cell and cell above)
+          if (y > 0 && Math.random() < 0.5) {
+            walls[id].north = true;
+            walls[`${x},${y-1}`].south = true;
+          }
+          
+          // Internal east wall (between this cell and cell to the right)
+          if (x < MAZE_SIZE - 1 && Math.random() < 0.5) {
+            walls[id].east = true;
+            walls[`${x+1},${y}`].west = true;
+          }
+        }
+      }
+
+      // Ensure start and some neighbors are passable (use bottom-left start)
+      if (walls[START_KEY]) {
+        // open north (into maze) and east (into maze) so start is not isolated
+        walls[START_KEY].north = false;
+        if (START_Y - 1 >= 0 && walls[`${START_X},${START_Y-1}`]) walls[`${START_X},${START_Y-1}`].south = false;
+        walls[START_KEY].east = false;
+        if (START_X + 1 < MAZE_SIZE && walls[`${START_X+1},${START_Y}`]) walls[`${START_X+1},${START_Y}`].west = false;
+      }
+
+      // Adjust maze to ensure at least 48 reachable cells from start
+      const reached = adjustReachableToTarget(48);
+
+      renderMaze();
+      robot = { x: START_X, y: START_Y, dir: 0 };
+      // Start with only the start cell visited so the robot must explore
+      visited = new Set([START_KEY]);
+      updateDisplay();
+    }
+
+    // Render maze
+    function renderMaze() {
+      const mazeEl = document.getElementById('maze');
+      mazeEl.innerHTML = '';
+      
+      for (let y = 0; y < MAZE_SIZE; y++) {
+        for (let x = 0; x < MAZE_SIZE; x++) {
+          const cell = document.createElement('div');
+          cell.className = 'maze-cell';
+          cell.id = `cell-${x}-${y}`;
+          
+          const cellId = `${x},${y}`;
+          const cellWalls = walls[cellId];
+          
+          // Build border based on which walls exist
+          let borderStyle = '';
+          if (cellWalls.north) borderStyle += '2px solid #1a1a1a ';
+          if (cellWalls.east) borderStyle += '2px solid #1a1a1a ';
+          if (cellWalls.south) borderStyle += '2px solid #1a1a1a ';
+          if (cellWalls.west) borderStyle += '2px solid #1a1a1a ';
+          
+          // Set border using border-width (top right bottom left)
+          cell.style.borderTopWidth = cellWalls.north ? '2px' : '0px';
+          cell.style.borderRightWidth = cellWalls.east ? '2px' : '0px';
+          cell.style.borderBottomWidth = cellWalls.south ? '2px' : '0px';
+          cell.style.borderLeftWidth = cellWalls.west ? '2px' : '0px';
+          cell.style.borderStyle = 'solid';
+          cell.style.borderColor = '#1a1a1a';
+          
+          // ปรับสีเซลล์ (แสดงเฉพาะเมื่อ highlightEnabled = true)
+          if (highlightEnabled) {
+            if (robot.x === x && robot.y === y) {
+              cell.classList.add('current');
+            } else if (visited.has(cellId) && !(robot.x === x && robot.y === y)) {
+              cell.classList.add('trail');
+            }
+          }
+          
+          // หุ่นยนต์
+          if (robot.x === x && robot.y === y) {
+            const robotEl = document.createElement('div');
+            robotEl.className = 'robot';
+            robotEl.style.transform = `translate(-50%, -50%) rotate(${robot.dir * 90}deg)`;
+            cell.appendChild(robotEl);
+          }
+          
+          mazeEl.appendChild(cell);
+        }
+      }
+    }
+
+    // Sensor readings
+    function readSensors() {
+      const dir = DIRECTIONS[robot.dir];
+      const left = DIRECTIONS[(robot.dir + 3) % 4];
+      const right = DIRECTIONS[(robot.dir + 1) % 4];
+      
+      const frontX = robot.x + dir.dx;
+      const frontY = robot.y + dir.dy;
+      const leftX = robot.x + left.dx;
+      const leftY = robot.y + left.dy;
+      const rightX = robot.x + right.dx;
+      const rightY = robot.y + right.dy;
+      
+      // Check if there's a wall in that direction (use symmetric check)
+      const frontWall = !isPassable(robot.x, robot.y, robot.dir);
+      const leftWall = !isPassable(robot.x, robot.y, (robot.dir + 3) % 4);
+      const rightWall = !isPassable(robot.x, robot.y, (robot.dir + 1) % 4);
+      
+      const frontDist = frontWall ? '10cm' : '40cm';
+      const leftDist = leftWall ? '10cm' : '40cm';
+      const rightDist = rightWall ? '10cm' : '40cm';
+      
+      document.getElementById('frontSensor').textContent = frontDist;
+      document.getElementById('leftSensor').textContent = leftDist;
+      document.getElementById('rightSensor').textContent = rightDist;
+      
+      return { front: frontWall, left: leftWall, right: rightWall };
+    }
+
+    function isWall(x, y, direction) {
+      if (x < 0 || x >= MAZE_SIZE || y < 0 || y >= MAZE_SIZE) return true;
+      const cellId = `${x},${y}`;
+      const cellWalls = walls[cellId];
+      
+      if (!cellWalls) return true;
+      
+      switch(direction) {
+        case 0: return cellWalls.north;  // North
+        case 1: return cellWalls.east;   // East
+        case 2: return cellWalls.south;  // South
+        case 3: return cellWalls.west;   // West
+        default: return true;
+      }
+    }
+
+    // Return true if movement from (x,y) in direction `direction` is allowed (no wall either side)
+    function isPassable(x, y, direction) {
+      const nx = x + DIRECTIONS[direction].dx;
+      const ny = y + DIRECTIONS[direction].dy;
+      if (nx < 0 || nx >= MAZE_SIZE || ny < 0 || ny >= MAZE_SIZE) return false;
+
+      const cellId = `${x},${y}`;
+      const nextId = `${nx},${ny}`;
+      const cellWalls = walls[cellId];
+      const nextWalls = walls[nextId];
+
+      if (!cellWalls || !nextWalls) return false;
+
+      const dirNames = ['north','east','south','west'];
+      const dirName = dirNames[direction];
+      const oppName = dirNames[(direction + 2) % 4];
+
+      return !cellWalls[dirName] && !nextWalls[oppName];
+    }
+
+    // Count reachable cells from a starting position using BFS
+    function countReachableSet(sx, sy) {
+      const startKey = `${sx},${sy}`;
+      const q = [[sx, sy]];
+      const seen = new Set([startKey]);
+
+      while (q.length > 0) {
+        const [x, y] = q.shift();
+        for (let d = 0; d < 4; d++) {
+          const nx = x + DIRECTIONS[d].dx;
+          const ny = y + DIRECTIONS[d].dy;
+          const nid = `${nx},${ny}`;
+
+          if (nx < 0 || nx >= MAZE_SIZE || ny < 0 || ny >= MAZE_SIZE) continue;
+          if (seen.has(nid)) continue;
+          // If there's a wall between (x,y) and (nx,ny), we cannot go
+          if (!isPassable(x, y, d)) continue;
+
+          seen.add(nid);
+          q.push([nx, ny]);
+        }
+      }
+
+      return seen;
+    }
+
+    // Adjust maze walls to ensure at least `target` reachable cells from the start
+    function adjustReachableToTarget(target) {
+      const dirNames = ['north', 'east', 'south', 'west'];
+      let reachableSet = countReachableSet(START_X, START_Y);
+      let reachable = reachableSet.size;
+      let attempts = 0;
+
+      while (reachable < target && attempts < 2000) {
+        reachableSet = countReachableSet(START_X, START_Y);
+        reachable = reachableSet.size;
+
+        // Build candidate walls between reached and unreached neighbors
+        const candidates = [];
+        for (const key of reachableSet) {
+          const [xStr, yStr] = key.split(',');
+          const x = parseInt(xStr, 10);
+          const y = parseInt(yStr, 10);
+
+          for (let d = 0; d < 4; d++) {
+            const nx = x + DIRECTIONS[d].dx;
+            const ny = y + DIRECTIONS[d].dy;
+            const nid = `${nx},${ny}`;
+
+            if (nx < 0 || nx >= MAZE_SIZE || ny < 0 || ny >= MAZE_SIZE) continue;
+            if (reachableSet.has(nid)) continue; // already reachable
+
+            // If there's a wall between reached cell and unreached neighbor, it's a candidate
+            if (!isPassable(x, y, d)) {
+              candidates.push({ x, y, d, nx, ny });
+            }
+          }
+        }
+
+        if (candidates.length === 0) {
+          // No frontier walls found: fallback — remove a random internal wall
+          for (let y = 0; y < MAZE_SIZE; y++) {
+            for (let x = 0; x < MAZE_SIZE; x++) {
+              for (let d = 0; d < 4; d++) {
+                const nx = x + DIRECTIONS[d].dx;
+                const ny = y + DIRECTIONS[d].dy;
+                if (nx < 0 || nx >= MAZE_SIZE || ny < 0 || ny >= MAZE_SIZE) continue;
+                if (!isPassable(x, y, d)) {
+                  candidates.push({ x, y, d, nx, ny });
+                }
+              }
+            }
+          }
+        }
+
+        if (candidates.length === 0) break;
+
+        const pick = candidates[Math.floor(Math.random() * candidates.length)];
+        const { x, y, d, nx, ny } = pick;
+        const dirName = dirNames[d];
+        const oppDir = (d + 2) % 4;
+        const oppName = dirNames[oppDir];
+
+        // Remove the wall between (x,y) and (nx,ny)
+        if (walls[`${x},${y}`]) walls[`${x},${y}`][dirName] = false;
+        if (walls[`${nx},${ny}`]) walls[`${nx},${ny}`][oppName] = false;
+
+        reachableSet = countReachableSet(START_X, START_Y);
+        reachable = reachableSet.size;
+        attempts++;
+      }
+
+      return reachable;
+    }
+
+    function canMove(x, y) {
+      if (x < 0 || x >= MAZE_SIZE || y < 0 || y >= MAZE_SIZE) return false;
+      return walls[`${x},${y}`] !== undefined;
+    }
+
+    // Movement
+    async function moveRobot(dx, dy) {
+      const nx = robot.x + dx;
+      const ny = robot.y + dy;
+      
+      // determine direction index from dx,dy
+      let dirIdx = -1;
+      for (let d = 0; d < 4; d++) {
+        if (DIRECTIONS[d].dx === dx && DIRECTIONS[d].dy === dy) { dirIdx = d; break; }
+      }
+
+      // ensure destination in bounds and there's no wall both sides
+      if (dirIdx !== -1 && canMove(nx, ny) && isPassable(robot.x, robot.y, dirIdx)) {
+        robot.x = nx;
+        robot.y = ny;
+        visited.add(`${nx},${ny}`);
+        updateDisplay();
+        await new Promise(r => setTimeout(r, parseInt(document.getElementById('speedSlider').value)));
+        return true;
+      }
+      return false;
+    }
+
+    function rotateRobot(clockwise) {
+      robot.dir = (robot.dir + (clockwise ? 1 : 3)) % 4;
+      updateDisplay();
+    }
+
+    function updateDisplay() {
+      renderMaze();
+      document.getElementById('posDisplay').textContent = `Position: (${robot.x}, ${robot.y})`;
+      document.getElementById('dirDisplay').textContent = `Direction: ${DIRECTIONS[robot.dir].arrow} (${DIRECTIONS[robot.dir].name})`;
+      document.getElementById('cellCount').textContent = visited.size;
+      readSensors();
+    }
+
+    // Algorithms - ตรวจสอบกำแพงอย่างเข้มงวด ไม่มีการข้ามกำแพง
+    const algorithms = {
+      rightwall: async function() {
+        let stuckCount = 0;
+        while (isRunning && stuckCount < 10) {
+          const sensors = readSensors();
+          
+          // ตรวจสอบทางขวา ต้องไม่มีกำแพง AND ไม่ติดขอบ
+          const rightDir = (robot.dir + 1) % 4;
+          const rightDx = DIRECTIONS[rightDir].dx;
+          const rightDy = DIRECTIONS[rightDir].dy;
+          const canGoRight = isPassable(robot.x, robot.y, rightDir);
+          
+          if (canGoRight && !sensors.right) {
+            rotateRobot(true);
+            const moved = await moveRobot(DIRECTIONS[robot.dir].dx, DIRECTIONS[robot.dir].dy);
+            if (moved) {
+              stuckCount = 0;
+              continue;
+            }
+          }
+          
+          // ตรวจสอบหน้า ต้องไม่มีกำแพง AND ไม่ติดขอบ
+          const canGoFront = isPassable(robot.x, robot.y, robot.dir);
+          
+          if (canGoFront && !sensors.front) {
+            const moved = await moveRobot(DIRECTIONS[robot.dir].dx, DIRECTIONS[robot.dir].dy);
+            if (moved) {
+              stuckCount = 0;
+              continue;
+            }
+          }
+          
+          // หมุนซ้ายเพื่อหาทางอื่น
+          rotateRobot(false);
+          stuckCount++;
+          await new Promise(r => setTimeout(r, parseInt(document.getElementById('speedSlider').value)));
+        }
+      },
+      
+      leftwall: async function() {
+        let stuckCount = 0;
+        while (isRunning && stuckCount < 10) {
+          const sensors = readSensors();
+          
+          // ตรวจสอบทางซ้าย ต้องไม่มีกำแพง AND ไม่ติดขอบ
+          const leftDir = (robot.dir + 3) % 4;
+          const leftDx = DIRECTIONS[leftDir].dx;
+          const leftDy = DIRECTIONS[leftDir].dy;
+          const canGoLeft = isPassable(robot.x, robot.y, leftDir);
+          
+          if (canGoLeft && !sensors.left) {
+            rotateRobot(false);
+            const moved = await moveRobot(DIRECTIONS[robot.dir].dx, DIRECTIONS[robot.dir].dy);
+            if (moved) {
+              stuckCount = 0;
+              continue;
+            }
+          }
+          
+          // ตรวจสอบหน้า ต้องไม่มีกำแพง AND ไม่ติดขอบ
+          const canGoFront = isPassable(robot.x, robot.y, robot.dir);
+          
+          if (canGoFront && !sensors.front) {
+            const moved = await moveRobot(DIRECTIONS[robot.dir].dx, DIRECTIONS[robot.dir].dy);
+            if (moved) {
+              stuckCount = 0;
+              continue;
+            }
+          }
+          
+          // หมุนขวาเพื่อหาทางอื่น
+          rotateRobot(true);
+          stuckCount++;
+          await new Promise(r => setTimeout(r, parseInt(document.getElementById('speedSlider').value)));
+        }
+      },
+      
+      random: async function() {
+        let stuckCount = 0;
+        while (isRunning && stuckCount < 10) {
+          // สุ่มทิศทาง 4 ทิศทาง
+          const directions = [0, 1, 2, 3].sort(() => Math.random() - 0.5);
+          let moved = false;
+          
+          // ลองเดินตามลำดับสุ่ม ต้องไม่มีกำแพง AND ไม่ติดขอบ
+          for (let d of directions) {
+            const dir = DIRECTIONS[d];
+            const nextX = robot.x + dir.dx;
+            const nextY = robot.y + dir.dy;
+            
+            // ตรวจสอบ: ไม่ติดขอบ + ไม่มีกำแพง
+            if (isPassable(robot.x, robot.y, d)) {
+              robot.dir = d;
+              moved = await moveRobot(dir.dx, dir.dy);
+              stuckCount = 0;
+              break;
+            }
+          }
+          
+          if (!moved) {
+            rotateRobot(true);
+            stuckCount++;
+            await new Promise(r => setTimeout(r, parseInt(document.getElementById('speedSlider').value)));
+          }
+        }
+      },
+      
+      uturn: async function() {
+        let stuckCount = 0;
+        while (isRunning && stuckCount < 10) {
+          // Priority: Forward > Right > Left > U-turn
+          
+          // ลองหน้า
+          const canGoFront = isPassable(robot.x, robot.y, robot.dir);
+          if (canGoFront) {
+            const moved = await moveRobot(DIRECTIONS[robot.dir].dx, DIRECTIONS[robot.dir].dy);
+            if (moved) {
+              stuckCount = 0;
+              continue;
+            }
+          }
+          
+          // ลองขวา
+          const rightDir = (robot.dir + 1) % 4;
+          const canGoRight = isPassable(robot.x, robot.y, rightDir);
+          if (canGoRight) {
+            rotateRobot(true);
+            const moved = await moveRobot(DIRECTIONS[robot.dir].dx, DIRECTIONS[robot.dir].dy);
+            if (moved) {
+              stuckCount = 0;
+              continue;
+            }
+          }
+          
+          // ลองซ้าย
+          const leftDir = (robot.dir + 3) % 4;
+          const canGoLeft = isPassable(robot.x, robot.y, leftDir);
+          if (canGoLeft) {
+            rotateRobot(false);
+            rotateRobot(false); // หมุนกลับ
+            rotateRobot(false); // หมุนซ้ายจริง
+            const moved = await moveRobot(DIRECTIONS[robot.dir].dx, DIRECTIONS[robot.dir].dy);
+            if (moved) {
+              stuckCount = 0;
+              continue;
+            }
+          }
+          
+          // U-turn (หมุนหลัง)
+          rotateRobot(true);
+          rotateRobot(true);
+          stuckCount++;
+          await new Promise(r => setTimeout(r, parseInt(document.getElementById('speedSlider').value)));
+        }
+      },
+      
+      maximize: async function() {
+        let stuckCount = 0;
+        let lastVisitedCount = visited.size;
+        let noProgressCount = 0;
+        
+        while (isRunning && stuckCount < 10) {
+          // Priority: Forward > Right > Left > Back
+          const priorities = [
+            { dir: 0, name: 'forward' },
+            { dir: 1, name: 'right' },
+            { dir: 3, name: 'left' },
+            { dir: 2, name: 'back' }
+          ];
+          
+          let moved = false;
+          
+          for (let p of priorities) {
+            const dir = DIRECTIONS[p.dir];
+            const nx = robot.x + dir.dx;
+            const ny = robot.y + dir.dy;
+            
+            // ตรวจสอบเข้มงวด: ไม่ติดขอบ + ไม่มีกำแพง
+            if (isPassable(robot.x, robot.y, p.dir)) {
+              robot.dir = p.dir;
+              
+              // ลองเดินไปช่องใหม่ก่อน
+              if (!visited.has(`${nx},${ny}`)) {
+                moved = await moveRobot(dir.dx, dir.dy);
+                stuckCount = 0;
+                break;
+              }
+              // ถ้าช่องเยี่ยมแล้ว ให้เดิน แต่นับ stuck
+              else if (!moved) {
+                moved = await moveRobot(dir.dx, dir.dy);
+                stuckCount = 0;
+              }
+            }
+          }
+          
+          if (!moved) {
+            // ลองเดินไปช่องเยี่ยมแล้วถ้าไม่มีช่องใหม่
+            for (let p of priorities) {
+              const dir = DIRECTIONS[p.dir];
+              const nx = robot.x + dir.dx;
+              const ny = robot.y + dir.dy;
+              
+              if (isPassable(robot.x, robot.y, p.dir)) {
+                robot.dir = p.dir;
+                moved = await moveRobot(dir.dx, dir.dy);
+                break;
+              }
+            }
+          }
+          
+          if (!moved) {
+            rotateRobot(true);
+            stuckCount++;
+          }
+          
+          // ตรวจสอบความก้าวหน้า
+          if (visited.size === lastVisitedCount) {
+            noProgressCount++;
+            if (noProgressCount > 5) break;
+          } else {
+            noProgressCount = 0;
+            lastVisitedCount = visited.size;
+          }
+          
+          await new Promise(r => setTimeout(r, parseInt(document.getElementById('speedSlider').value)));
+        }
+      },
+      
+      smartmap: async function() {
+        // Smart Mapping Algorithm - เก็บแผนที่ของเซลล์เยี่ยมและจำไว้
+        let cellMap = {};  // เก็บข้อมูลแต่ละเซลล์ที่เยี่ยม
+        let stuckCount = 0;
+        let lastVisitedCount = visited.size;
+        
+        // เก็บข้อมูลเซลล์เริ่มต้น (ใช้ตำแหน่งเริ่มต้นด้านล่างซ้าย)
+        cellMap[START_KEY] = {
+          x: START_X, y: START_Y,
+          openDirs: [0, 1, 2, 3].filter(d => isPassable(START_X, START_Y, d))
+        };
+        
+        while (isRunning && stuckCount < 15) {
+          const cellId = `${robot.x},${robot.y}`;
+          
+          // บันทึกเซลล์ปัจจุบัน
+          if (!cellMap[cellId]) {
+            cellMap[cellId] = {
+              x: robot.x, y: robot.y,
+              openDirs: []
+            };
+          }
+          
+          // หาทิศทางที่สามารถเดินได้
+          const availableDirs = [0, 1, 2, 3].filter(d => 
+            isPassable(robot.x, robot.y, d)
+          );
+          
+          cellMap[cellId].openDirs = availableDirs;
+          
+          // Priority 1: เดินไปช่องที่ยังไม่เยี่ยม
+          let unvisitedDirs = availableDirs.filter(d => {
+            const nx = robot.x + DIRECTIONS[d].dx;
+            const ny = robot.y + DIRECTIONS[d].dy;
+            return !visited.has(`${nx},${ny}`);
+          });
+          
+          if (unvisitedDirs.length > 0) {
+            // เลือกทิศทางที่ใกล้เคียงกับทิศปัจจุบัน
+            unvisitedDirs.sort((a, b) => {
+              const diffA = Math.abs((a - robot.dir + 4) % 4 - 2);
+              const diffB = Math.abs((b - robot.dir + 4) % 4 - 2);
+              return diffA - diffB;
+            });
+            
+            robot.dir = unvisitedDirs[0];
+            const moved = await moveRobot(DIRECTIONS[robot.dir].dx, DIRECTIONS[robot.dir].dy);
+            if (moved) {
+              stuckCount = 0;
+            } else {
+              stuckCount++;
+            }
+          }
+          // Priority 2: ถ้าไม่มีช่องใหม่ เดินไปช่องเยี่ยมแล้วที่มีช่องเปิดน้อย (dead end ที่ต้องข้ามมา)
+          else if (availableDirs.length > 0) {
+            robot.dir = availableDirs[0];
+            const moved = await moveRobot(DIRECTIONS[robot.dir].dx, DIRECTIONS[robot.dir].dy);
+            if (moved) {
+              stuckCount++;
+            } else {
+              stuckCount++;
+            }
+          } else {
+            // ติดอยู่ - หมุน
+            rotateRobot(true);
+            stuckCount++;
+          }
+          
+          // ตรวจสอบความก้าวหน้า
+          if (visited.size === lastVisitedCount) {
+            stuckCount += 0.5;
+          } else {
+            lastVisitedCount = visited.size;
+            stuckCount = Math.max(0, stuckCount - 1);
+          }
+          
+          await new Promise(r => setTimeout(r, parseInt(document.getElementById('speedSlider').value)));
+        }
+      },
+      
+      astar: async function() {
+        // A* Algorithm with Smart Mapping
+        // - บันทึกทางเข้าของแต่ละเซลล์ (open doors)
+        // - จำลำดับความสำคัญ: ช่องใหม่ > ช่องเยี่ยมแล้ว (ที่มีทางใหม่) > กลับ
+        
+        const cellMap = {};  // {key: {x, y, openDoors: Set([0,1,2,3])}}
+        const unexploredExits = {};  // {key: Set([direction])} - ทางที่ยังไม่เข้า
+        
+        function manhattanDistance(p1, p2) {
+          return Math.abs(p1[0] - p2[0]) + Math.abs(p1[1] - p2[1]);
+        }
+        
+        function recordCell(x, y) {
+          // สแกนทั้ง 4 ทิศ บันทึกทางที่เปิด
+          const key = `${x},${y}`;
+          if (!cellMap[key]) {
+            cellMap[key] = { x, y, openDoors: new Set() };
+            unexploredExits[key] = new Set();
+          }
+          
+          for (let d = 0; d < 4; d++) {
+            if (isPassable(x, y, d)) {
+              cellMap[key].openDoors.add(d);
+              
+              // ทางที่ยังไม่เข้า
+              const nextX = x + DIRECTIONS[d].dx;
+              const nextY = y + DIRECTIONS[d].dy;
+              const nextKey = `${nextX},${nextY}`;
+              
+              if (!visited.has(nextKey)) {
+                unexploredExits[key].add(d);
+              }
+            }
+          }
+          
+          return cellMap[key];
+        }
+        
+        function findNearestUnexplored() {
+          // หาทางที่ยังไม่เข้า ใกล้สุด (จากเซลล์ที่เยี่ยมแล้ว)
+          let nearest = null;
+          let minDist = Infinity;
+          
+          for (const key in unexploredExits) {
+            if (unexploredExits[key].size > 0) {
+              const dirs = Array.from(unexploredExits[key]);
+              for (const dir of dirs) {
+                const cell = cellMap[key];
+                const nextX = cell.x + DIRECTIONS[dir].dx;
+                const nextY = cell.y + DIRECTIONS[dir].dy;
+                
+                const dist = manhattanDistance([robot.x, robot.y], [nextX, nextY]);
+                if (dist < minDist) {
+                  minDist = dist;
+                  nearest = { from: [cell.x, cell.y], dir, to: [nextX, nextY] };
+                }
+              }
+            }
+          }
+          
+          return nearest;
+        }
+        
+        function aStarSearch(start, goal) {
+          // A* Search
+          const openSet = [];
+          const gScore = {};
+          const cameFrom = {};
+          const closedSet = new Set();
+          
+          const startKey = `${start[0]},${start[1]}`;
+          const goalKey = `${goal[0]},${goal[1]}`;
+          
+          gScore[startKey] = 0;
+          const h = manhattanDistance(start, goal);
+          openSet.push({
+            f: h,
+            g: 0,
+            pos: start,
+            key: startKey
+          });
+          
+          while (openSet.length > 0) {
+            let minIdx = 0;
+            for (let i = 1; i < openSet.length; i++) {
+              if (openSet[i].f < openSet[minIdx].f || 
+                  (openSet[i].f === openSet[minIdx].f && openSet[i].g < openSet[minIdx].g)) {
+                minIdx = i;
+              }
+            }
+            
+            const current = openSet[minIdx];
+            openSet.splice(minIdx, 1);
+            
+            if (current.key === goalKey) {
+              const path = [];
+              let curr = goalKey;
+              while (curr in cameFrom) {
+                const [x, y] = curr.split(',').map(Number);
+                path.unshift([x, y]);
+                curr = cameFrom[curr];
+              }
+              path.unshift(start);
+              return path;
+            }
+            
+            closedSet.add(current.key);
+            
+            for (let d = 0; d < 4; d++) {
+              const dir = DIRECTIONS[d];
+              const [cx, cy] = current.pos;
+              const nx = cx + dir.dx;
+              const ny = cy + dir.dy;
+              const nKey = `${nx},${ny}`;
+              
+              if (!canMove(nx, ny) || !isPassable(cx, cy, d) || closedSet.has(nKey)) {
+                continue;
+              }
+              
+              const tentativeG = current.g + 1;
+              
+              if (!(nKey in gScore) || tentativeG < gScore[nKey]) {
+                cameFrom[nKey] = current.key;
+                gScore[nKey] = tentativeG;
+                
+                const hScore = manhattanDistance([nx, ny], goal);
+                const fScore = tentativeG + hScore;
+                
+                openSet.push({
+                  f: fScore,
+                  g: tentativeG,
+                  pos: [nx, ny],
+                  key: nKey
+                });
+              }
+            }
+          }
+          
+          return [];
+        }
+        
+        // บันทึกเซลล์เริ่มต้น
+        recordCell(robot.x, robot.y);
+        
+        // Main loop
+        while (isRunning && visited.size < MAZE_SIZE * MAZE_SIZE) {
+          // ค้นหาทางที่ยังไม่เข้า ใกล้สุด
+          const target = findNearestUnexplored();
+          
+          if (!target) {
+            // ครบทั้งหมด
+            break;
+          }
+          
+          // หาเส้นทาง A* ไปยังจุดเริ่มต้นของทางใหม่
+          const path = aStarSearch([robot.x, robot.y], target.from);
+          
+          if (path.length < 1) {
+            break;
+          }
+          
+          // วิ่งตามเส้นทาง
+          for (let i = 1; i < path.length && isRunning; i++) {
+            const [nx, ny] = path[i];
+            const dx = nx - robot.x;
+            const dy = ny - robot.y;
+            
+            let targetDir = -1;
+            for (let d = 0; d < 4; d++) {
+              if (DIRECTIONS[d].dx === dx && DIRECTIONS[d].dy === dy) {
+                targetDir = d;
+                break;
+              }
+            }
+            
+            if (targetDir === -1) break;
+            
+            // หมุนให้หน้าไปทิศทางที่ถูก
+            while (robot.dir !== targetDir && isRunning) {
+              rotateRobot(true);
+              await new Promise(r => setTimeout(r, parseInt(document.getElementById('speedSlider').value) / 2));
+            }
+            
+            // เดินไป
+            await moveRobot(dx, dy);
+            
+            // บันทึกเซลล์ใหม่
+            recordCell(robot.x, robot.y);
+          }
+          
+          // หมุนให้หน้าไปทางที่ยังไม่เข้า
+          while (robot.dir !== target.dir && isRunning) {
+            rotateRobot(true);
+            await new Promise(r => setTimeout(r, parseInt(document.getElementById('speedSlider').value) / 2));
+          }
+          
+          // เดินเข้าช่องใหม่
+          await moveRobot(DIRECTIONS[target.dir].dx, DIRECTIONS[target.dir].dy);
+          
+          // บันทึกช่องใหม่ และเคลียร์ว่านี่ไม่ใช่ทางใหม่อีกแล้ว
+          recordCell(robot.x, robot.y);
+          const key = `${target.from[0]},${target.from[1]}`;
+          unexploredExits[key].delete(target.dir);
+          
+          await new Promise(r => setTimeout(r, parseInt(document.getElementById('speedSlider').value)));
+        }
+      }
+    };
+
+    // Run algorithm
+    async function runAlgorithm(algoName) {
+      isRunning = true;
+      document.getElementById('statusText').textContent = '🏃 วิ่งอยู่...';
+      document.querySelectorAll('.algo-btn').forEach(btn => btn.disabled = true);
+      
+      visited.clear();
+      visited.add(START_KEY);
+      robot = { x: START_X, y: START_Y, dir: 0 };
+      updateDisplay();
+      
+      startTime = Date.now();
+      timerInterval = setInterval(() => {
+        const elapsed = (Date.now() - startTime) / 1000;
+        document.getElementById('timeDisplay').textContent = elapsed.toFixed(1) + 's';
+        const score = (visited.size / elapsed).toFixed(2);
+        document.getElementById('scoreDisplay').textContent = score;
+      }, 100);
+      
+      await algorithms[algoName]();
+      
+      const elapsed = (Date.now() - startTime) / 1000;
+      const finalScore = (visited.size / elapsed).toFixed(2);
+      
+      scores.push({
+        algo: algoName,
+        cells: visited.size,
+        time: elapsed.toFixed(1),
+        score: finalScore
+      });
+      
+      updateLeaderboard();
+      isRunning = false;
+      document.getElementById('statusText').textContent = '✅ เสร็จสิ้น';
+      clearInterval(timerInterval);
+      document.querySelectorAll('.algo-btn').forEach(btn => btn.disabled = false);
+    }
+
+    function updateLeaderboard() {
+      const sorted = [...scores].sort((a, b) => parseFloat(b.score) - parseFloat(a.score));
+      const tbody = document.getElementById('leaderboard');
+      tbody.innerHTML = sorted.map(s => `
+        <tr>
+          <td class="px-2 md:px-4 py-2 text-xs md:text-sm">${s.algo}</td>
+          <td class="px-2 md:px-4 py-2 text-center font-bold text-xs md:text-sm">${s.cells}</td>
+          <td class="px-2 md:px-4 py-2 text-center text-xs md:text-sm">${s.time}s</td>
+          <td class="px-2 md:px-4 py-2 text-center font-bold text-indigo-600 text-xs md:text-sm">${s.score}</td>
+        </tr>
+      `).join('');
+    }
+
+    // Python Code Export
+    function getPythonCode(algoName) {
+      const codes = {
+        rightwall: `from spike import PrimeHub, LargeMotor, DistanceSensor
+from spike.control import wait_for_seconds, motor_pair
+
+# LEGO Spike Prime - Right Wall Follow Algorithm
+# Maze: 7x7 blocks, 42cm x 42cm, 15cm high walls
+hub = PrimeHub()
+
+# Motor & Sensor Setup
+left_motor = LargeMotor('A')
+right_motor = LargeMotor('B')
+motor_pair_wheels = motor_pair.MotorPair('A', 'B')
+
+front_sensor = DistanceSensor('E')
+left_sensor = DistanceSensor('F')
+right_sensor = DistanceSensor('D')
+
+WALL_DISTANCE = 15  # cm
+SPEED = 50
+CELL_SIZE = 6  # cm
+
+def read_sensors():
+    return {
+        'front': front_sensor.get_distance_cm() < WALL_DISTANCE,
+        'left': left_sensor.get_distance_cm() < WALL_DISTANCE,
+        'right': right_sensor.get_distance_cm() < WALL_DISTANCE
+    }
+
+def move_forward():
+    motor_pair_wheels.move(distance=CELL_SIZE, unit='cm', steering=0, speed=SPEED)
+
+def turn_right():
+    motor_pair_wheels.move(distance=0, unit='cm', steering=100, speed=30)
+    wait_for_seconds(0.3)
+
+def turn_left():
+    motor_pair_wheels.move(distance=0, unit='cm', steering=-100, speed=30)
+    wait_for_seconds(0.3)
+
+# Right Wall Follow Algorithm
+visited_cells = 1
+while visited_cells < 49:  # 7x7 = 49 cells
+    sensors = read_sensors()
+    
+    if not sensors['right']:  # ไม่มีกำแพงทางขวา
+        turn_right()
+        move_forward()
+        visited_cells += 1
+    elif not sensors['front']:  # ไม่มีกำแพงข้างหน้า
+        move_forward()
+        visited_cells += 1
+    else:  # มีกำแพงด้านหน้า หมุนซ้าย
+        turn_left()
+
+hub.speak('Complete')`,
+
+        leftwall: `from spike import PrimeHub, LargeMotor, DistanceSensor
+from spike.control import wait_for_seconds, motor_pair
+
+# LEGO Spike Prime - Left Wall Follow Algorithm
+# Maze: 7x7 blocks, 42cm x 42cm, 15cm high walls
+hub = PrimeHub()
+
+left_motor = LargeMotor('A')
+right_motor = LargeMotor('B')
+motor_pair_wheels = motor_pair.MotorPair('A', 'B')
+
+front_sensor = DistanceSensor('E')
+left_sensor = DistanceSensor('F')
+right_sensor = DistanceSensor('D')
+
+WALL_DISTANCE = 15
+SPEED = 50
+CELL_SIZE = 6
+
+def read_sensors():
+    return {
+        'front': front_sensor.get_distance_cm() < WALL_DISTANCE,
+        'left': left_sensor.get_distance_cm() < WALL_DISTANCE,
+        'right': right_sensor.get_distance_cm() < WALL_DISTANCE
+    }
+
+def move_forward():
+    motor_pair_wheels.move(distance=CELL_SIZE, unit='cm', steering=0, speed=SPEED)
+
+def turn_right():
+    motor_pair_wheels.move(distance=0, unit='cm', steering=100, speed=30)
+    wait_for_seconds(0.3)
+
+def turn_left():
+    motor_pair_wheels.move(distance=0, unit='cm', steering=-100, speed=30)
+    wait_for_seconds(0.3)
+
+# Left Wall Follow Algorithm
+visited_cells = 1
+while visited_cells < 49:
+    sensors = read_sensors()
+    
+    if not sensors['left']:  # ไม่มีกำแพงทางซ้าย
+        turn_left()
+        move_forward()
+        visited_cells += 1
+    elif not sensors['front']:  # ไม่มีกำแพงข้างหน้า
+        move_forward()
+        visited_cells += 1
+    else:
+        turn_right()
+
+hub.speak('Complete')`,
+
+        random: `from spike import PrimeHub, LargeMotor, DistanceSensor
+from spike.control import wait_for_seconds, motor_pair
+import random
+
+# LEGO Spike Prime - Random Walk Algorithm
+# Maze: 7x7 blocks, 42cm x 42cm, 15cm high walls
+hub = PrimeHub()
+
+left_motor = LargeMotor('A')
+right_motor = LargeMotor('B')
+motor_pair_wheels = motor_pair.MotorPair('A', 'B')
+
+front_sensor = DistanceSensor('E')
+left_sensor = DistanceSensor('F')
+right_sensor = DistanceSensor('D')
+
+WALL_DISTANCE = 15
+SPEED = 50
+CELL_SIZE = 6
+
+directions = ['forward', 'left', 'right', 'back']
+
+def read_sensors():
+    return {
+        'front': front_sensor.get_distance_cm() < WALL_DISTANCE,
+        'left': left_sensor.get_distance_cm() < WALL_DISTANCE,
+        'right': right_sensor.get_distance_cm() < WALL_DISTANCE
+    }
+
+def move_forward():
+    motor_pair_wheels.move(distance=CELL_SIZE, unit='cm', steering=0, speed=SPEED)
+
+def turn_right():
+    motor_pair_wheels.move(distance=0, unit='cm', steering=100, speed=30)
+    wait_for_seconds(0.3)
+
+def turn_left():
+    motor_pair_wheels.move(distance=0, unit='cm', steering=-100, speed=30)
+    wait_for_seconds(0.3)
+
+# Random Walk Algorithm
+visited_cells = 1
+while visited_cells < 49:
+    direction = random.choice(directions)
+    sensors = read_sensors()
+    
+    if direction == 'forward' and not sensors['front']:
+        move_forward()
+        visited_cells += 1
+    elif direction == 'left' and not sensors['left']:
+        turn_left()
+        move_forward()
+        visited_cells += 1
+    elif direction == 'right' and not sensors['right']:
+        turn_right()
+        move_forward()
+        visited_cells += 1
+    else:
+        turn_left()
+
+hub.speak('Complete')`,
+
+        uturn: `from spike import PrimeHub, LargeMotor, DistanceSensor
+from spike.control import wait_for_seconds, motor_pair
+
+# LEGO Spike Prime - U-Turn Priority Algorithm
+# Maze: 7x7 blocks, 42cm x 42cm, 15cm high walls
+hub = PrimeHub()
+
+left_motor = LargeMotor('A')
+right_motor = LargeMotor('B')
+motor_pair_wheels = motor_pair.MotorPair('A', 'B')
+
+front_sensor = DistanceSensor('E')
+left_sensor = DistanceSensor('F')
+right_sensor = DistanceSensor('D')
+
+WALL_DISTANCE = 15
+SPEED = 50
+CELL_SIZE = 6
+
+def read_sensors():
+    return {
+        'front': front_sensor.get_distance_cm() < WALL_DISTANCE,
+        'left': left_sensor.get_distance_cm() < WALL_DISTANCE,
+        'right': right_sensor.get_distance_cm() < WALL_DISTANCE
+    }
+
+def move_forward():
+    motor_pair_wheels.move(distance=CELL_SIZE, unit='cm', steering=0, speed=SPEED)
+
+def turn_right():
+    motor_pair_wheels.move(distance=0, unit='cm', steering=100, speed=30)
+    wait_for_seconds(0.3)
+
+def turn_left():
+    motor_pair_wheels.move(distance=0, unit='cm', steering=-100, speed=30)
+    wait_for_seconds(0.3)
+
+# U-Turn Priority Algorithm
+visited_cells = 1
+while visited_cells < 49:
+    sensors = read_sensors()
+    
+    if not sensors['front']:
+        move_forward()
+        visited_cells += 1
+    elif not sensors['right']:
+        turn_right()
+    elif not sensors['left']:
+        turn_left()
+    else:  # All blocked - U-turn
+        turn_left()
+        turn_left()
+
+hub.speak('Complete')`,
+
+        maximize: `from spike import PrimeHub, LargeMotor, DistanceSensor
+from spike.control import wait_for_seconds, motor_pair
+
+# LEGO Spike Prime - Maximize Cells Algorithm
+# Maze: 7x7 blocks, 42cm x 42cm, 15cm high walls
+hub = PrimeHub()
+
+left_motor = LargeMotor('A')
+right_motor = LargeMotor('B')
+motor_pair_wheels = motor_pair.MotorPair('A', 'B')
+
+front_sensor = DistanceSensor('E')
+left_sensor = DistanceSensor('F')
+right_sensor = DistanceSensor('D')
+
+WALL_DISTANCE = 15
+SPEED = 50
+CELL_SIZE = 6
+
+def read_sensors():
+    return {
+        'front': front_sensor.get_distance_cm() < WALL_DISTANCE,
+        'left': left_sensor.get_distance_cm() < WALL_DISTANCE,
+        'right': right_sensor.get_distance_cm() < WALL_DISTANCE
+    }
+
+def move_forward():
+    motor_pair_wheels.move(distance=CELL_SIZE, unit='cm', steering=0, speed=SPEED)
+
+def turn_right():
+    motor_pair_wheels.move(distance=0, unit='cm', steering=100, speed=30)
+    wait_for_seconds(0.3)
+
+def turn_left():
+    motor_pair_wheels.move(distance=0, unit='cm', steering=-100, speed=30)
+    wait_for_seconds(0.3)
+
+# Maximize Cells Algorithm - Prefer: Forward > Right > Left > Back
+visited_cells = 1
+while visited_cells < 49:
+    sensors = read_sensors()
+    
+    # Priority: Forward
+    if not sensors['front']:
+        move_forward()
+        visited_cells += 1
+    # Priority: Right
+    elif not sensors['right']:
+        turn_right()
+        move_forward()
+        visited_cells += 1
+    # Priority: Left
+    elif not sensors['left']:
+        turn_left()
+        move_forward()
+        visited_cells += 1
+    # Last resort: Backward
+    else:
+        turn_left()
+        turn_left()
+
+hub.speak('Complete')`,
+
+        smartmap: `from spike import PrimeHub, LargeMotor, DistanceSensor
+from spike.control import wait_for_seconds, motor_pair
+
+# LEGO Spike Prime - Smart Mapping Algorithm
+# Maze: 7x7 blocks, 42cm x 42cm, 15cm high walls
+# Algorithm: บันทึกเซลล์เยี่ยมพร้อมข้อมูลทางเปิด ลำดับความสำคัญ: ช่องใหม่ > ช่องเยี่ยมแล้ว
+hub = PrimeHub()
+
+left_motor = LargeMotor('A')
+right_motor = LargeMotor('B')
+motor_pair_wheels = motor_pair.MotorPair('A', 'B')
+
+front_sensor = DistanceSensor('E')
+left_sensor = DistanceSensor('F')
+right_sensor = DistanceSensor('D')
+
+WALL_DISTANCE = 15
+SPEED = 50
+CELL_SIZE = 6
+
+# Cell Map: {(x,y): {'open_dirs': [0,1,2,3], 'visited': True}}
+cell_map = {}
+visited_cells = 1
+
+def read_sensors():
+    return {
+        'front': front_sensor.get_distance_cm() < WALL_DISTANCE,
+        'left': left_sensor.get_distance_cm() < WALL_DISTANCE,
+        'right': right_sensor.get_distance_cm() < WALL_DISTANCE
+    }
+
+def move_forward():
+    motor_pair_wheels.move(distance=CELL_SIZE, unit='cm', steering=0, speed=SPEED)
+    return True
+
+def turn_right():
+    motor_pair_wheels.move(distance=0, unit='cm', steering=100, speed=30)
+    wait_for_seconds(0.3)
+
+def turn_left():
+    motor_pair_wheels.move(distance=0, unit='cm', steering=-100, speed=30)
+    wait_for_seconds(0.3)
+
+# Smart Mapping Algorithm
+position = (0, 0)
+direction = 0  # 0=North, 1=East, 2=South, 3=West
+
+while visited_cells < 49:
+    sensors = read_sensors()
+    
+    # บันทึกเซลล์ปัจจุบัน
+    cell_map[position] = {
+        'open_dirs': [d for d in [0,1,2,3] if not [sensors['front'], sensors['right'], sensors['front'], sensors['left']][d]]
+    }
+    
+    # Priority 1: หาทางใหม่ที่ไม่เยี่ยม
+    new_ways = []
+    for d in cell_map[position]['open_dirs']:
+        # คำนวณตำแหน่งถัดไป
+        if d == 0: next_pos = (position[0], position[1]-1)
+        elif d == 1: next_pos = (position[0]+1, position[1])
+        elif d == 2: next_pos = (position[0], position[1]+1)
+        else: next_pos = (position[0]-1, position[1])
+        
+        if next_pos not in cell_map:
+            new_ways.append(d)
+    
+    if new_ways:
+        # เลือกทางที่ใกล้ปัจจุบันมากที่สุด
+        best_dir = new_ways[0]
+        for d in new_ways:
+            if abs((d - direction + 4) % 4 - 2) < abs((best_dir - direction + 4) % 4 - 2):
+                best_dir = d
+        
+        direction = best_dir
+        if best_dir == 0: pass  # เดินไปข้างหน้า
+        elif best_dir == 1: turn_right()
+        elif best_dir == 2: turn_right(); turn_right()
+        else: turn_left()
+        
+        move_forward()
+        visited_cells += 1
+        
+        # อัพเดตตำแหน่ง
+        if direction == 0: position = (position[0], position[1]-1)
+        elif direction == 1: position = (position[0]+1, position[1])
+        elif direction == 2: position = (position[0], position[1]+1)
+        else: position = (position[0]-1, position[1])
+    
+    elif cell_map[position]['open_dirs']:
+        # Priority 2: เดินไปทางที่เยี่ยมแล้ว
+        next_dir = cell_map[position]['open_dirs'][0]
+        direction = next_dir
+        if next_dir == 0: pass
+        elif next_dir == 1: turn_right()
+        elif next_dir == 2: turn_right(); turn_right()
+        else: turn_left()
+        
+        move_forward()
+        
+        if direction == 0: position = (position[0], position[1]-1)
+        elif direction == 1: position = (position[0]+1, position[1])
+        elif direction == 2: position = (position[0], position[1]+1)
+        else: position = (position[0]-1, position[1])
+    
+    else:
+        # ติดอยู่ หมุน
+        turn_right()
+
+hub.speak('Mapping Complete')`
+      };
+      
+      return codes[algoName] || 'No code available';
+    }
+
+    // Event Listeners
+    document.getElementById('genMazeBtn').addEventListener('click', generateMaze);
+    
+    // Algorithm selection (select, don't auto-run)
+    document.querySelectorAll('.algo-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        if (this.disabled) return;
+        // clear previous selection styles
+        document.querySelectorAll('.algo-btn').forEach(b => b.classList.remove('ring-2', 'ring-indigo-400'));
+        this.classList.add('ring-2', 'ring-indigo-400');
+        selectedAlgo = this.dataset.algo;
+        document.getElementById('startBtn').disabled = false;
+      });
+    });
+    
+    document.getElementById('speedSlider').addEventListener('input', (e) => {
+      document.getElementById('speedVal').textContent = e.target.value;
+    });
+
+    // Start / Stop / Reset
+    document.getElementById('startBtn').addEventListener('click', async () => {
+      if (!selectedAlgo) return;
+      highlightEnabled = true;
+      document.getElementById('startBtn').disabled = true;
+      document.getElementById('stopBtn').disabled = false;
+      document.querySelectorAll('.algo-btn').forEach(b => b.disabled = true);
+      await runAlgorithm(selectedAlgo);
+      document.getElementById('stopBtn').disabled = true;
+      document.getElementById('startBtn').disabled = false;
+      document.querySelectorAll('.algo-btn').forEach(b => b.disabled = false);
+    });
+
+    document.getElementById('stopBtn').addEventListener('click', () => {
+      isRunning = false;
+      clearInterval(timerInterval);
+      document.getElementById('statusText').textContent = '⏸️ หยุดโดยผู้ใช้';
+      document.getElementById('stopBtn').disabled = true;
+      document.getElementById('startBtn').disabled = false;
+      document.querySelectorAll('.algo-btn').forEach(b => b.disabled = false);
+    });
+
+    document.getElementById('resetBtn').addEventListener('click', () => {
+      isRunning = false;
+      clearInterval(timerInterval);
+      document.getElementById('statusText').textContent = 'รีเซต';
+      document.getElementById('stopBtn').disabled = true;
+      document.getElementById('startBtn').disabled = true;
+      selectedAlgo = null;
+      highlightEnabled = false; // hide visited/current/trail colors
+      document.querySelectorAll('.algo-btn').forEach(b => { b.disabled = false; b.classList.remove('ring-2', 'ring-indigo-400'); });
+      // Clear visited markers but keep walls and robot at start
+      visited = new Set();
+      robot = { x: START_X, y: START_Y, dir: 0 };
+      renderMaze();
+      updateDisplay();
+    });
+    
+    document.getElementById('showCodeBtn').addEventListener('click', () => {
+      const display = document.getElementById('codeDisplay');
+      const algoName = scores.length > 0 ? scores[scores.length - 1].algo : 'rightwall';
+      const code = getPythonCode(algoName);
+      document.getElementById('codeContent').textContent = code;
+      display.classList.toggle('hidden');
+    });
+    
+    document.getElementById('exportPythonBtn').addEventListener('click', () => {
+      const algoName = scores.length > 0 ? scores[scores.length - 1].algo : 'rightwall';
+      const code = getPythonCode(algoName);
+      const blob = new Blob([code], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `maze_explorer_${algoName}.py`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // Initialize
+    generateMaze();
+    lucide.createIcons();
+  </script>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a080d2ba984a888d',t:'MTc4MDg0NzUzOA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
